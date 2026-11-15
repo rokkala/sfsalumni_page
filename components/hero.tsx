@@ -7,10 +7,11 @@ import { registrationPath } from '@/lib/events/choose-event';
 import { heroEventCopy } from '@/lib/events/hero-copy';
 import type { EventCatalog } from '@/lib/events/types';
 
+/** Shown only when /api/events returns no rows. */
 const FALLBACK = {
   id: 'fallback',
-  eyebrow: 'Welcome to SFS Alumni Association',
-  title: 'Welcome to SFS Alumni Association',
+  eyebrow: 'SFS Alumni',
+  title: 'Welcome to SFS',
   body: '',
   meta: '',
   instagramUrl: null as string | null,
@@ -24,6 +25,7 @@ const instagramClass =
 
 export default function Hero() {
   const [events, setEvents] = useState<EventCatalog[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [index, setIndex] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -39,6 +41,8 @@ export default function Hero() {
         }
       } catch {
         if (active) setEvents([]);
+      } finally {
+        if (active) setLoaded(true);
       }
     })();
     return () => {
@@ -71,13 +75,16 @@ export default function Hero() {
     setIndex(Math.round(el.scrollLeft / el.clientWidth));
   }
 
+  // Events when present; Welcome to SFS only after load confirms there are none.
   const slides = events.length
     ? events.map((event) => ({
         id: event.id,
         ...heroEventCopy(event),
         instagramUrl: (event.instagram_url || '').trim() || null,
       }))
-    : [FALLBACK];
+    : loaded
+      ? [FALLBACK]
+      : [];
 
   return (
     <section className="relative w-full h-[620px] lg:h-[700px] overflow-hidden -mt-20">
