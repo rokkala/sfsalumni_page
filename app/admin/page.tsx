@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/admin-shell';
+import ReconciledRegsModal from '@/components/admin-tools/reconciled-regs-modal';
 
 type Overview = {
   pendingMembers: number;
@@ -20,6 +21,8 @@ type Overview = {
 export default function AdminOverviewPage() {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState('');
+  const [reconciledOpen, setReconciledOpen] = useState(false);
+  const closeReconciled = useCallback(() => setReconciledOpen(false), []);
 
   useEffect(() => {
     (async () => {
@@ -64,12 +67,12 @@ export default function AdminOverviewPage() {
       tone: 'navy' as const,
     },
     {
-      href: '/admin/event-ops',
-      label: 'Money received',
+      label: 'Payments reconciled',
       value: moneyPaid,
-      hint: `Still due ${moneyDue}`,
+      hint: `Still due ${moneyDue} · open the list`,
       icon: 'payments',
       tone: 'amber' as const,
+      onClick: () => setReconciledOpen(true),
     },
     {
       href: '/admin/registrations',
@@ -122,12 +125,8 @@ export default function AdminOverviewPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((c) => {
           const t = toneClass[c.tone];
-          return (
-            <Link
-              key={c.href}
-              href={c.href}
-              className={`rounded-2xl border p-5 shadow-sm transition-transform hover:-translate-y-0.5 ${t.card}`}
-            >
+          const inner = (
+            <>
               <span
                 className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${t.iconWrap}`}
               >
@@ -136,10 +135,30 @@ export default function AdminOverviewPage() {
               <div className="text-display-sm text-primary mt-4 tabular-nums">{c.value}</div>
               <div className="text-label-md text-primary font-bold mt-1">{c.label}</div>
               <p className="text-body-sm text-on-surface-variant mt-1">{c.hint}</p>
+            </>
+          );
+          const className = `rounded-2xl border p-5 text-left shadow-sm transition-transform hover:-translate-y-0.5 ${t.card}`;
+          if (c.onClick) {
+            return (
+              <button
+                key={c.label}
+                type="button"
+                onClick={c.onClick}
+                aria-haspopup="dialog"
+                className={`${className} cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30`}
+              >
+                {inner}
+              </button>
+            );
+          }
+          return (
+            <Link key={c.label} href={c.href!} className={className}>
+              {inner}
             </Link>
           );
         })}
       </div>
+      <ReconciledRegsModal open={reconciledOpen} onClose={closeReconciled} />
     </AdminShell>
   );
 }

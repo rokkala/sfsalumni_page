@@ -3,6 +3,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import ReconciledRegsModal from '@/components/admin-tools/reconciled-regs-modal';
 import { formatCostForDisplay } from '@/lib/registration/registration';
 import type { EventCatalog } from '@/lib/events/types';
 
@@ -55,6 +56,8 @@ export default function EventOpsPanel() {
     const [kind, setKind] = useState('');
     const [data, setData] = useState<Payload | null>(null);
     const [error, setError] = useState('');
+    const [reconciledOpen, setReconciledOpen] = useState(false);
+    const closeReconciled = useCallback(() => setReconciledOpen(false), []);
 
     const load = useCallback(async () => {
         setError('');
@@ -137,13 +140,35 @@ export default function EventOpsPanel() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5 mb-8">
-                {kpis.map((k) => (
-                    <div key={k.label} className="rounded-2xl border border-primary/10 bg-surface-paper p-4 shadow-sm">
-                        <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">{k.label}</p>
-                        <p className="mt-2 text-headline-sm text-primary tabular-nums">{k.value}</p>
-                    </div>
-                ))}
+                {kpis.map((k) => {
+                    const body = (
+                        <>
+                            <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">{k.label}</p>
+                            <p className="mt-2 text-headline-sm text-primary tabular-nums">{k.value}</p>
+                        </>
+                    );
+                    if (k.label !== 'Received') {
+                        return (
+                            <div key={k.label} className="rounded-2xl border border-primary/10 bg-surface-paper p-4 shadow-sm">
+                                {body}
+                            </div>
+                        );
+                    }
+                    return (
+                        <button
+                            key={k.label}
+                            type="button"
+                            onClick={() => setReconciledOpen(true)}
+                            aria-haspopup="dialog"
+                            className="rounded-2xl border border-primary/10 bg-surface-paper p-4 text-left shadow-sm cursor-pointer hover:border-jubilee-gold-deep/40 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        >
+                            {body}
+                            <p className="mt-1 text-label-sm text-on-surface-variant">Open the list</p>
+                        </button>
+                    );
+                })}
             </div>
+            <ReconciledRegsModal open={reconciledOpen} onClose={closeReconciled} eventId={eventId} />
 
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-headline-sm text-primary">Exceptions</h2>

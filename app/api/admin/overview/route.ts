@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { amountDuePaise } from '@/lib/admin/event-exceptions';
+import { summarizeOverviewStats } from '@/lib/admin/registration-ledger';
+import { loadRegistrationRows, one } from '@/lib/admin/registration-rows';
 import { requireVerifiedAdmin } from '@/lib/auth/admin-guard';
 import { createAdminClient } from '@/lib/supabase-admin';
 
@@ -15,13 +16,9 @@ export async function GET() {
     .eq('member_status', 'pending');
 
   let publishedEvents = 0;
-  let unpaidRegistrations = 0;
-  let registrationCount = 0;
-  let amountPaidPaise = 0;
-  let amountDuePaiseTotal = 0;
+  let catalogReady = false;
 
   const withDeleted = await admin.from('event_catalog').select('id,deleted_at').eq('published', true);
-  let catalogReady = false;
   if (!withDeleted.error) {
     catalogReady = true;
     publishedEvents = (withDeleted.data || []).filter((e) => !e.deleted_at).length;
@@ -31,20 +28,18 @@ export async function GET() {
     if (catalogReady) publishedEvents = fallback.data?.length || 0;
   }
 
-  const regs = await admin
-    .from('event_registrations')
-    .select('id,payment_status,total_cost_paise,amount_paid_paise');
-  if (!regs.error && regs.data) {
-    registrationCount = regs.data.length;
-    for (const r of regs.data) {
-      const paid = Math.max(0, Number(r.amount_paid_paise) || 0);
-      const total = Math.max(0, Number(r.total_cost_paise) || 0);
-      amountPaidPaise += paid;
-      amountDuePaiseTotal += amountDuePaise(total, paid);
-      const status = String(r.payment_status || '');
-      if (status === 'pending' || status === 'partial') unpaidRegistrations += 1;
-    }
-  }
+  // Same ledger as Event ops: committee-verified and donations count as settled.
+  const { rows } = await loadRegistrationRows('');
+  const money = summarizeOverviewStats(
+    rows.map((r) => ({
+      payment_status: r.payment_status,
+      total_cost_paise: r.total_cost_paise,
+      amount_paid_paise: r.amount_paid_paise,
+      core_committee_manually_verified: r.core_committee_manually_verified,
+      bank_reference: r.bank_reference,
+      donation: one(r.donation),
+    }))
+  );
 
   let pendingMemories = 0;
   const mem = await admin
@@ -65,13 +60,13 @@ export async function GET() {
   return NextResponse.json({
     pendingMembers: pendingMembers.count || 0,
     publishedEvents,
-    unpaidRegistrations,
+    unpaidRegistrations: money.unpaidRegistrations,
     pendingMemories,
     pendingStories,
     pendingApprovals,
-    registrationCount,
-    amountPaidPaise,
-    amountDuePaise: amountDuePaiseTotal,
+    registrationCount: money.registrationCount,
+    amountPaidPaise: money.amountPaidPaise,
+    amountDuePaise: money.amountDuePaise,
     catalogReady,
   });
 }

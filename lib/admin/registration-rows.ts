@@ -1,6 +1,6 @@
 // lib/admin/registration-rows.ts
 // Loads event registrations for the admin screens and works out each row's ledger.
-// Both admin routes read through here, so the list, event ops totals and exceptions always agree.
+// Overview, the list, event ops totals and exceptions all read through here so the figures agree.
 
 import { computeLedger, type DonationRow, type RegistrationLedger } from '@/lib/admin/registration-ledger';
 import { issueMissingPaidCodes, type RegistrationCodeAdmin } from '@/lib/events/registration-code';

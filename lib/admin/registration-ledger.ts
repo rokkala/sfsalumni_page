@@ -82,3 +82,32 @@ export function computeLedger(input: LedgerInput): RegistrationLedger {
 
     return { billedPaise: billed, settledPaise, duePaise, committeeVerified, confirmed, state };
 }
+
+export type OverviewRegStats = {
+    registrationCount: number;
+    unpaidRegistrations: number;
+    amountPaidPaise: number;
+    amountDuePaise: number;
+};
+
+/** Overview KPIs from the same ledger Event ops / Registrations use. */
+export function summarizeOverviewStats(inputs: LedgerInput[]): OverviewRegStats {
+    let registrationCount = 0;
+    let unpaidRegistrations = 0;
+    let amountPaidPaise = 0;
+    let amountDuePaise = 0;
+    for (const input of inputs) {
+        const ledger = computeLedger(input);
+        registrationCount += 1;
+        amountPaidPaise += ledger.settledPaise;
+        amountDuePaise += ledger.duePaise;
+        if (
+            ledger.state === 'unpaid' ||
+            ledger.state === 'partial' ||
+            ledger.state === 'awaiting_verification'
+        ) {
+            unpaidRegistrations += 1;
+        }
+    }
+    return { registrationCount, unpaidRegistrations, amountPaidPaise, amountDuePaise };
+}
