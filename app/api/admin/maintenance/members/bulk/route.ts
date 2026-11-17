@@ -6,6 +6,7 @@ import {
 } from '@/lib/admin/member-purge';
 import {
   purgeMemberAccount,
+  purgeMemberDonations,
   purgeMemberRegistrations,
 } from '@/lib/admin/purge-member';
 import { createAdminClient } from '@/lib/supabase-admin';
@@ -64,6 +65,18 @@ export async function POST(request: Request) {
         continue;
       }
       const result = await purgeMemberAccount(admin, id);
+      if (result.ok) {
+        results.push({ id, ok: true });
+        succeeded += 1;
+      } else {
+        results.push({ id, ok: false, error: result.error });
+        failed += 1;
+      }
+      continue;
+    }
+
+    if (parsed.scope === 'donations') {
+      const result = await purgeMemberDonations(admin, id);
       if (result.ok) {
         results.push({ id, ok: true });
         succeeded += 1;

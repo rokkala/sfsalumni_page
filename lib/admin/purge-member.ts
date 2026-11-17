@@ -55,6 +55,10 @@ export type PurgeRegistrationsResult =
   | { ok: true; deleted_registrations: number; deleted_proofs: number }
   | { ok: false; status: number; error: string };
 
+export type PurgeDonationsResult =
+  | { ok: true; deleted_donations: number; deleted_proofs: number }
+  | { ok: false; status: number; error: string };
+
 /**
  * Hard-delete only event registrations (+ their offline proofs) for an account.
  * Leaves the membership, donations, stories, etc.
@@ -107,6 +111,62 @@ export async function purgeMemberRegistrations(
   return {
     ok: true,
     deleted_registrations: regIds.length,
+    deleted_proofs: proofCount,
+  };
+}
+
+/**
+ * Hard-delete all donation rows (+ donation offline proofs) for an account.
+ * Leaves registrations and membership.
+ */
+export async function purgeMemberDonations(
+  admin: SupabaseClient,
+  accountId: string
+): Promise<PurgeDonationsResult> {
+  const { data: rows, error: listErr } = await admin
+    .from('donations')
+    .select('id')
+    .eq('account_id', accountId);
+  if (listErr) {
+    console.error('purge list donations', listErr);
+    return { ok: false, status: 500, error: 'Could not list donations' };
+  }
+  const donationIds = (rows || []).map((r) => String(r.id));
+  if (donationIds.length === 0) {
+    return { ok: true, deleted_donations: 0, deleted_proofs: 0 };
+  }
+
+  const { data: proofs, error: proofListErr } = await admin
+    .from('offline_payment_proofs')
+    .select('id')
+    .in('donation_id', donationIds);
+  if (proofListErr) {
+    console.error('purge list donation proofs', proofListErr);
+    return { ok: false, status: 500, error: 'Could not list donation proofs' };
+  }
+  const proofCount = (proofs || []).length;
+
+  const { error: proofErr } = await admin
+    .from('offline_payment_proofs')
+    .delete()
+    .in('donation_id', donationIds);
+  if (proofErr) {
+    console.error('purge donation proofs', proofErr);
+    return { ok: false, status: 500, error: 'Could not delete donation proofs' };
+  }
+
+  const { error: donationErr } = await admin
+    .from('donations')
+    .delete()
+    .eq('account_id', accountId);
+  if (donationErr) {
+    console.error('purge donations', donationErr);
+    return { ok: false, status: 500, error: 'Could not delete donations' };
+  }
+
+  return {
+    ok: true,
+    deleted_donations: donationIds.length,
     deleted_proofs: proofCount,
   };
 }

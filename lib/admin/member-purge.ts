@@ -15,7 +15,7 @@ export type PurgeGuardInput = {
 export type PurgeGuardOk = { ok: true };
 export type PurgeGuardErr = { ok: false; error: string };
 
-export type MaintenanceBulkScope = 'registrations' | 'membership';
+export type MaintenanceBulkScope = 'registrations' | 'donations' | 'membership';
 
 export const MAINTENANCE_BULK_CONFIRM = 'DELETE';
 export const MAX_MAINTENANCE_BULK_IDS = 100;
@@ -70,8 +70,8 @@ export function parseMaintenanceBulkBody(body: unknown):
   }
   if (ids.length === 0) return { ok: false, error: 'ids must not be empty' };
   const scope = String(b.scope || '').trim() as MaintenanceBulkScope;
-  if (scope !== 'registrations' && scope !== 'membership') {
-    return { ok: false, error: 'scope must be registrations or membership' };
+  if (scope !== 'registrations' && scope !== 'donations' && scope !== 'membership') {
+    return { ok: false, error: 'scope must be registrations, donations, or membership' };
   }
   return { ok: true, ids, scope };
 }

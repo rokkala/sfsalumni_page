@@ -52,4 +52,11 @@ const bulkOk = parseMaintenanceBulkBody({
 });
 assert(bulkOk.ok === true && bulkOk.scope === 'membership' && bulkOk.ids.length === 2, 'bulk ok');
 
+const bulkDonations = parseMaintenanceBulkBody({
+  ids: [a],
+  scope: 'donations',
+  confirm: MAINTENANCE_BULK_CONFIRM,
+});
+assert(bulkDonations.ok === true && bulkDonations.scope === 'donations', 'bulk donations scope');
+
 console.log('ok: member purge');

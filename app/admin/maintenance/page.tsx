@@ -183,7 +183,9 @@ export default function AdminMaintenancePage() {
     const label =
       scope === 'registrations'
         ? `Delete all event registrations for ${ids.length} selected member(s)? Accounts stay.`
-        : `Permanently delete ${ids.length} membership(s) and all related data? This cannot be undone.`;
+        : scope === 'donations'
+          ? `Delete all donation rows (and donation proofs) for ${ids.length} selected member(s)? Accounts and registrations stay.`
+          : `Permanently delete ${ids.length} membership(s) and all related data? This cannot be undone.`;
     if (!window.confirm(label)) return;
 
     setBusy(true);
@@ -203,7 +205,12 @@ export default function AdminMaintenancePage() {
       const ok = Number(payload.succeeded || 0);
       const skipped = Number(payload.skipped || 0);
       const failed = Number(payload.failed || 0);
-      const scopeLabel = scope === 'registrations' ? 'registration wipe' : 'membership delete';
+      const scopeLabel =
+        scope === 'registrations'
+          ? 'registration wipe'
+          : scope === 'donations'
+            ? 'donation wipe'
+            : 'membership delete';
       setMessage(
         `${scopeLabel}: ${ok} ok` +
           (skipped ? `, ${skipped} skipped` : '') +
@@ -263,8 +270,9 @@ export default function AdminMaintenancePage() {
   return (
     <AdminShell title="Maintenance">
       <p className="text-body-sm text-on-surface-variant mb-6 max-w-3xl">
-        Full member list with multi-select. Delete <strong>registrations only</strong> (account
-        stays) or <strong>membership</strong> (hard wipe of the account and linked data). Type{' '}
+        Full member list with multi-select. Delete <strong>registrations only</strong>,{' '}
+        <strong>donations only</strong> (account stays), or <strong>membership</strong> (hard wipe of
+        the account and linked data). Type{' '}
         <code className="text-label-sm">{MAINTENANCE_BULK_CONFIRM}</code> to unlock bulk actions.
         Membership wipe skips you and other admins.
       </p>
@@ -440,6 +448,14 @@ export default function AdminMaintenancePage() {
             className="rounded-lg border border-outline-variant px-3 py-1.5 text-label-sm font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
           >
             Delete registrations
+          </button>
+          <button
+            type="button"
+            disabled={busy || selectedRows.length === 0}
+            onClick={() => void runBulk('donations')}
+            className="rounded-lg border border-outline-variant px-3 py-1.5 text-label-sm font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+          >
+            Delete donations
           </button>
           <button
             type="button"
