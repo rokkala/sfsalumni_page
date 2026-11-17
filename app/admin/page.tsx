@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/admin-shell';
+import OpsWorkQueue from '@/components/admin-tools/ops-work-queue';
 import ReconciledRegsModal from '@/components/admin-tools/reconciled-regs-modal';
 
 type GiftBucket = { count: number; paid_paise: number; pending_paise: number };
@@ -150,62 +151,17 @@ export default function AdminOverviewPage() {
   };
 
   return (
-    <AdminShell title="Overview">
+    <AdminShell
+      title="Overview"
+      subtitle="Start with the work queue, then open Event ops or Registrations for detail."
+    >
       {error && (
         <p className="rounded-xl border border-error-container bg-error-container/40 p-4 text-body-sm text-on-error-container mb-4">
           {error}
         </p>
       )}
 
-      {data?.reconciliation && data.reconciliation.action_total > 0 ? (
-        <section className="rounded-2xl border border-primary/15 bg-surface-paper p-5 mb-6 shadow-sm">
-          <h2 className="text-headline-sm text-primary">Reconciliation queue</h2>
-          <p className="text-body-sm text-on-surface-variant mt-1 mb-4">
-            Work through these in order: bank proofs → donations without proof → unpaid registrations.
-          </p>
-          <ul className="grid gap-3 sm:grid-cols-3">
-            <li>
-              <Link
-                href="/admin/payment-accounts"
-                className="block rounded-xl border border-outline-variant bg-white p-4 hover:border-primary/30"
-              >
-                <p className="text-display-sm text-primary tabular-nums">
-                  {data.reconciliation.pending_utr_proofs}
-                </p>
-                <p className="text-label-md text-primary font-bold mt-1">UTR proofs to review</p>
-                <p className="text-body-sm text-on-surface-variant mt-1">
-                  Registration + cause donations ({data.reconciliation.pending_cause_gifts_queued}{' '}
-                  cause-only)
-                </p>
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/admin/donations?status=pending"
-                className="block rounded-xl border border-outline-variant bg-white p-4 hover:border-primary/30"
-              >
-                <p className="text-display-sm text-primary tabular-nums">
-                  {data.reconciliation.pending_gifts_without_proof}
-                </p>
-                <p className="text-label-md text-primary font-bold mt-1">Donations awaiting payment</p>
-                <p className="text-body-sm text-on-surface-variant mt-1">No proof in queue yet</p>
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/admin/registrations"
-                className="block rounded-xl border border-outline-variant bg-white p-4 hover:border-primary/30"
-              >
-                <p className="text-display-sm text-primary tabular-nums">
-                  {data.reconciliation.unpaid_registrations}
-                </p>
-                <p className="text-label-md text-primary font-bold mt-1">Unpaid / partial regs</p>
-                <p className="text-body-sm text-on-surface-variant mt-1">Fees or bundled donations</p>
-              </Link>
-            </li>
-          </ul>
-        </section>
-      ) : null}
+      <OpsWorkQueue className="mb-6" />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((c) => {

@@ -3,6 +3,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import OpsWorkQueue from '@/components/admin-tools/ops-work-queue';
 import ReconciledRegsModal from '@/components/admin-tools/reconciled-regs-modal';
 import { formatCostForDisplay } from '@/lib/registration/registration';
 import type { EventCatalog } from '@/lib/events/types';
@@ -30,6 +31,7 @@ type GiftBucket = {
 
 type ExceptionRow = {
     id: string;
+    event_id: string;
     event_title: string;
     full_name: string;
     email: string;
@@ -71,6 +73,7 @@ export default function EventOpsPanel() {
     const [events, setEvents] = useState<EventCatalog[]>([]);
     const [eventId, setEventId] = useState('');
     const [kind, setKind] = useState('');
+    const [stateFilter, setStateFilter] = useState<StateKey | ''>('');
     const [data, setData] = useState<Payload | null>(null);
     const [error, setError] = useState('');
     const [reconciledOpen, setReconciledOpen] = useState(false);
@@ -105,27 +108,34 @@ export default function EventOpsPanel() {
 
     const filtered = useMemo(() => {
         if (!data) return [];
-        if (!kind) return data.exceptions;
-        return data.exceptions.filter((e) => e.kinds.includes(kind));
-    }, [data, kind]);
+        return data.exceptions.filter((e) => {
+            if (kind && !e.kinds.includes(kind as (typeof e.kinds)[number])) return false;
+            if (stateFilter && e.state !== stateFilter) return false;
+            return true;
+        });
+    }, [data, kind, stateFilter]);
+
+    function registrationHref(row: ExceptionRow) {
+        const p = new URLSearchParams();
+        if (row.event_id) p.set('event', row.event_id);
+        if (row.email) p.set('q', row.email);
+        return `/admin/registrations?${p}`;
+    }
+
+    function regStateHref(state: StateKey) {
+        const p = new URLSearchParams();
+        if (eventId) p.set('event', eventId);
+        p.set('state', state);
+        return `/admin/registrations?${p}`;
+    }
 
     const t = data?.totals;
     const counts = data?.state_counts;
 
-    const kpis = t && counts
-        ? [
-              { label: 'Registrations', value: String(t.registration_count) },
-              { label: 'People', value: String(t.people) },
-              { label: 'Checked in', value: String(t.checked_in_count) },
-              { label: 'Confirmed', value: String(counts.confirmed) },
-              { label: 'Awaiting verification', value: String(counts.awaiting_verification) },
-              { label: 'Partly paid', value: String(counts.partial) },
-              { label: 'Unpaid', value: String(counts.unpaid) },
-              { label: 'Total billed', value: formatCostForDisplay(t.billed_paise) },
-              { label: 'Received', value: formatCostForDisplay(t.settled_paise) },
-              { label: 'Still due', value: formatCostForDisplay(t.due_paise) },
-          ]
-        : [];
+    const needsAttention =
+        counts && t
+            ? counts.awaiting_verification + counts.partial + counts.unpaid
+            : 0;
 
     return (
         <>
@@ -134,6 +144,8 @@ export default function EventOpsPanel() {
                     {error}
                 </p>
             )}
+
+            <OpsWorkQueue eventId={eventId} className="mb-6" />
 
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
                 <select
@@ -152,7 +164,13 @@ export default function EventOpsPanel() {
                     href={`/admin/registrations${eventId ? `?event=${eventId}` : ''}`}
                     className="inline-flex items-center justify-center rounded-lg border border-primary/20 px-4 py-2.5 text-label-sm text-primary hover:bg-secondary-container/40"
                 >
-                    Open registrations
+                    Confirm & pay
+                </Link>
+                <Link
+                    href="/admin/payment-accounts"
+                    className="inline-flex items-center justify-center rounded-lg border border-primary/20 px-4 py-2.5 text-label-sm text-primary hover:bg-secondary-container/40"
+                >
+                    Bank proofs
                 </Link>
             </div>
 
@@ -229,52 +247,160 @@ export default function EventOpsPanel() {
                 </section>
             ) : null}
 
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5 mb-8">
-                {kpis.map((k) => {
-                    const body = (
-                        <>
-                            <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">{k.label}</p>
-                            <p className="mt-2 text-headline-sm text-primary tabular-nums">{k.value}</p>
-                        </>
-                    );
-                    if (k.label !== 'Received') {
-                        return (
-                            <div key={k.label} className="rounded-2xl border border-primary/10 bg-surface-paper p-4 shadow-sm">
-                                {body}
+            {t && counts ? (
+                <section className="grid gap-4 lg:grid-cols-3 mb-8">
+                    <div className="rounded-2xl border border-primary/10 bg-surface-paper p-5 shadow-sm">
+                        <h3 className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
+                            Attendance
+                        </h3>
+                        <dl className="mt-3 space-y-2 text-body-sm">
+                            <div className="flex justify-between gap-2">
+                                <dt className="text-on-surface-variant">Registrations</dt>
+                                <dd className="tabular-nums text-primary font-medium">{t.registration_count}</dd>
                             </div>
-                        );
-                    }
-                    return (
+                            <div className="flex justify-between gap-2">
+                                <dt className="text-on-surface-variant">People (alumni + guests)</dt>
+                                <dd className="tabular-nums text-primary font-medium">{t.people}</dd>
+                            </div>
+                            <div className="flex justify-between gap-2">
+                                <dt className="text-on-surface-variant">Checked in</dt>
+                                <dd className="tabular-nums text-primary font-medium">{t.checked_in_count}</dd>
+                            </div>
+                        </dl>
+                        <Link
+                            href="/admin/check-in"
+                            className="inline-block mt-4 text-label-sm text-primary underline"
+                        >
+                            Open check-in
+                        </Link>
+                    </div>
+                    <div className="rounded-2xl border border-primary/10 bg-surface-paper p-5 shadow-sm">
+                        <h3 className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
+                            Payment status
+                        </h3>
+                        <p className="text-body-sm text-on-surface-variant mt-1">
+                            {needsAttention} need confirmation or payment
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {(
+                                [
+                                    'awaiting_verification',
+                                    'partial',
+                                    'unpaid',
+                                    'confirmed',
+                                    'cancelled',
+                                ] as StateKey[]
+                            ).map((key) => (
+                                <Link
+                                    key={key}
+                                    href={regStateHref(key)}
+                                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-label-sm ${STATE_BADGE[key]} hover:opacity-90`}
+                                >
+                                    {data?.state_labels[key]}
+                                    <span className="tabular-nums font-bold">{counts[key]}</span>
+                                </Link>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="rounded-2xl border border-primary/10 bg-surface-paper p-5 shadow-sm">
+                        <h3 className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
+                            Registration money
+                        </h3>
+                        <dl className="mt-3 space-y-2 text-body-sm">
+                            <div className="flex justify-between gap-2">
+                                <dt className="text-on-surface-variant">Billed</dt>
+                                <dd className="tabular-nums text-primary font-medium">
+                                    {formatCostForDisplay(t.billed_paise)}
+                                </dd>
+                            </div>
+                            <div className="flex justify-between gap-2">
+                                <dt className="text-on-surface-variant">Received</dt>
+                                <dd className="tabular-nums text-primary font-medium">
+                                    {formatCostForDisplay(t.settled_paise)}
+                                </dd>
+                            </div>
+                            <div className="flex justify-between gap-2">
+                                <dt className="text-on-surface-variant">Still due</dt>
+                                <dd className="tabular-nums text-error font-medium">
+                                    {formatCostForDisplay(t.due_paise)}
+                                </dd>
+                            </div>
+                        </dl>
                         <button
-                            key={k.label}
                             type="button"
                             onClick={() => setReconciledOpen(true)}
-                            aria-haspopup="dialog"
-                            className="rounded-2xl border border-primary/10 bg-surface-paper p-4 text-left shadow-sm cursor-pointer hover:border-jubilee-gold-deep/40 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            className="mt-4 text-label-sm text-primary underline cursor-pointer"
                         >
-                            {body}
-                            <p className="mt-1 text-label-sm text-on-surface-variant">Open the list</p>
+                            View reconciled list ({formatCostForDisplay(t.settled_paise)})
                         </button>
-                    );
-                })}
-            </div>
+                    </div>
+                </section>
+            ) : null}
             <ReconciledRegsModal open={reconciledOpen} onClose={closeReconciled} eventId={eventId} />
 
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-headline-sm text-primary">Exceptions</h2>
-                <select
-                    className="px-4 py-3 rounded-lg border border-primary/15 text-body-sm bg-surface-ivory"
-                    value={kind}
-                    onChange={(e) => setKind(e.target.value)}
-                >
-                    <option value="">All kinds ({data?.exceptions.length ?? 0})</option>
+            <div className="mb-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h2 className="text-headline-sm text-primary">Fix list</h2>
+                        <p className="text-body-sm text-on-surface-variant mt-1">
+                            Registrations with mismatched money or missing IDs — open each row to confirm payment.
+                        </p>
+                    </div>
+                    <p className="text-label-sm text-on-surface-variant tabular-nums">
+                        Showing {filtered.length} of {data?.exceptions.length ?? 0}
+                    </p>
+                </div>
+                <div className="flex flex-wrap gap-2 items-center">
+                    <span className="text-label-sm text-on-surface-variant">State:</span>
+                    <button
+                        type="button"
+                        onClick={() => setStateFilter('')}
+                        className={`rounded-lg px-2.5 py-1 text-label-sm cursor-pointer ${
+                            stateFilter === '' ? 'bg-primary text-on-primary' : 'bg-surface-container text-primary'
+                        }`}
+                    >
+                        All
+                    </button>
+                    {data &&
+                        (['awaiting_verification', 'partial', 'unpaid'] as StateKey[]).map((key) => (
+                            <button
+                                key={key}
+                                type="button"
+                                onClick={() => setStateFilter(stateFilter === key ? '' : key)}
+                                className={`rounded-lg px-2.5 py-1 text-label-sm cursor-pointer ${STATE_BADGE[key]} ${
+                                    stateFilter === key ? 'ring-2 ring-primary/40' : ''
+                                }`}
+                            >
+                                {data.state_labels[key]} (
+                                {data.exceptions.filter((e) => e.state === key).length})
+                            </button>
+                        ))}
+                </div>
+                <div className="flex flex-wrap gap-2 items-center">
+                    <span className="text-label-sm text-on-surface-variant">Issue type:</span>
+                    <button
+                        type="button"
+                        onClick={() => setKind('')}
+                        className={`rounded-lg px-2.5 py-1 text-label-sm cursor-pointer ${
+                            kind === '' ? 'bg-primary text-on-primary' : 'bg-surface-container text-primary'
+                        }`}
+                    >
+                        All kinds
+                    </button>
                     {data &&
                         Object.entries(data.exception_labels).map(([key, label]) => (
-                            <option key={key} value={key}>
+                            <button
+                                key={key}
+                                type="button"
+                                onClick={() => setKind(kind === key ? '' : key)}
+                                className={`rounded-lg px-2.5 py-1 text-label-sm cursor-pointer bg-jubilee-gold-light/70 text-on-secondary-fixed-variant ${
+                                    kind === key ? 'ring-2 ring-primary/40' : ''
+                                }`}
+                            >
                                 {label} ({data.kind_counts[key] || 0})
-                            </option>
+                            </button>
                         ))}
-                </select>
+                </div>
             </div>
 
             <div className="overflow-x-auto rounded-2xl border border-primary/10 bg-surface-paper shadow-sm">
@@ -287,12 +413,13 @@ export default function EventOpsPanel() {
                             <th className="px-4 py-3">State</th>
                             <th className="px-4 py-3">Received / Due</th>
                             <th className="px-4 py-3">Issues</th>
+                            <th className="px-4 py-3">Next step</th>
                         </tr>
                     </thead>
                     <tbody>
                         {filtered.length === 0 ? (
                             <tr>
-                                <td colSpan={6} className="px-4 py-8 text-on-surface-variant">
+                                <td colSpan={7} className="px-4 py-8 text-on-surface-variant">
                                     No exceptions in this view.
                                 </td>
                             </tr>
@@ -324,6 +451,22 @@ export default function EventOpsPanel() {
                                                 </span>
                                             ))}
                                         </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <Link
+                                            href={registrationHref(row)}
+                                            className="inline-flex rounded-lg bg-secondary-container text-on-secondary-container px-3 py-1.5 text-label-sm hover:bg-secondary-fixed"
+                                        >
+                                            Open registration
+                                        </Link>
+                                        {row.state === 'awaiting_verification' ? (
+                                            <Link
+                                                href="/admin/payment-accounts"
+                                                className="block mt-2 text-label-sm text-primary underline"
+                                            >
+                                                Match bank proof
+                                            </Link>
+                                        ) : null}
                                     </td>
                                 </tr>
                             ))

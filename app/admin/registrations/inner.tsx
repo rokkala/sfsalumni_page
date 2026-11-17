@@ -3,8 +3,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import AdminShell from '@/components/admin-shell';
 import AdminBulkBar from '@/components/admin-tools/admin-bulk-bar';
+import OpsWorkQueue from '@/components/admin-tools/ops-work-queue';
 import { formatCostForDisplay } from '@/lib/registration/registration';
 import { groupByBatchSorted } from '@/lib/admin/reg-print-groups';
 import type { EventCatalog } from '@/lib/events/types';
@@ -62,7 +64,10 @@ export default function AdminRegistrationsInner() {
     const [events, setEvents] = useState<EventCatalog[]>([]);
     const [rows, setRows] = useState<Row[]>([]);
     const [eventId, setEventId] = useState(searchParams.get('event') || '');
-    const [state, setState] = useState<StateKey | ''>('');
+    const initialState = (searchParams.get('state') || '') as StateKey | '';
+    const [state, setState] = useState<StateKey | ''>(
+        STATE_OPTIONS.some((o) => o.value === initialState) ? initialState : ''
+    );
     const [q, setQ] = useState('');
     const [message, setMessage] = useState('');
     const [busy, setBusy] = useState('');
@@ -92,6 +97,15 @@ export default function AdminRegistrationsInner() {
             })
             .catch(() => {});
     }, []);
+
+    useEffect(() => {
+        const fromUrl = (searchParams.get('state') || '') as StateKey | '';
+        if (STATE_OPTIONS.some((o) => o.value === fromUrl)) {
+            setState(fromUrl);
+        } else if (!searchParams.get('state')) {
+            setState('');
+        }
+    }, [searchParams]);
 
     useEffect(() => {
         const t = setTimeout(() => {
@@ -200,14 +214,51 @@ export default function AdminRegistrationsInner() {
         (r) => r.billed_paise > 0 && (r.payment_status === 'paid' || r.settled_paise > 0) && r.state !== 'cancelled'
     );
 
+    const quickStates: ReadonlyArray<{ value: StateKey | ''; label: string }> = [
+        { value: '', label: 'All' },
+        { value: 'awaiting_verification', label: 'Awaiting proof' },
+        { value: 'partial', label: 'Partly paid' },
+        { value: 'unpaid', label: 'Unpaid' },
+        { value: 'confirmed', label: 'Confirmed' },
+    ];
+
     return (
-        <AdminShell title="Registrations">
+        <AdminShell
+            title="Registrations"
+            subtitle="Search by name or bank reference, expand a row for proof, then confirm payment to issue the registration ID."
+        >
             <div className="print:hidden">
+                <OpsWorkQueue eventId={eventId} className="mb-6" />
+
                 {message && (
                     <p className="rounded-xl border border-jubilee-gold-light bg-secondary-container/30 p-4 text-body-sm text-on-secondary-fixed-variant mb-4">
                         {message}
                     </p>
                 )}
+
+                <div className="flex flex-wrap gap-2 mb-4 items-center">
+                    <span className="text-label-sm text-on-surface-variant">Quick filter:</span>
+                    {quickStates.map((o) => (
+                        <button
+                            key={o.value || 'all'}
+                            type="button"
+                            onClick={() => setState(o.value)}
+                            className={`rounded-lg px-3 py-1.5 text-label-sm cursor-pointer ${
+                                state === o.value
+                                    ? 'bg-primary text-on-primary'
+                                    : 'bg-surface-container text-primary hover:bg-secondary-container/40'
+                            }`}
+                        >
+                            {o.label}
+                        </button>
+                    ))}
+                    <Link
+                        href="/admin/event-ops"
+                        className="ml-auto text-label-sm text-primary underline"
+                    >
+                        Event ops report
+                    </Link>
+                </div>
 
                 <div className="flex flex-col md:flex-row gap-3 mb-5">
                     <select
@@ -410,13 +461,21 @@ export default function AdminRegistrationsInner() {
                                                                 void patchRegistration(
                                                                     r.id,
                                                                     { payment_status: 'paid' },
-                                                                    'Marked paid. Registration code issued.'
+                                                                    'Payment confirmed. Registration ID issued.'
                                                                 )
                                                             }
                                                         >
-                                                            Mark paid
+                                                            Confirm payment
                                                         </button>
                                                     )}
+                                                    {r.state === 'awaiting_verification' && r.proof_screenshot_url ? (
+                                                        <Link
+                                                            href="/admin/payment-accounts"
+                                                            className={`${BUTTON_OUTLINE} inline-flex items-center`}
+                                                        >
+                                                            Review proof
+                                                        </Link>
+                                                    ) : null}
                                                     {r.billed_paise > 0 && (r.payment_status === 'paid' || r.settled_paise > 0) && (
                                                         <button
                                                             type="button"
@@ -426,11 +485,11 @@ export default function AdminRegistrationsInner() {
                                                                 void patchRegistration(
                                                                     r.id,
                                                                     { payment_status: 'pending' },
-                                                                    'Marked unpaid.'
+                                                                    'Payment reversed.'
                                                                 )
                                                             }
                                                         >
-                                                            Mark unpaid
+                                                            Undo payment
                                                         </button>
                                                     )}
                                                     <button

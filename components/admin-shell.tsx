@@ -189,9 +189,12 @@ function isActive(pathname: string, href: string, match: 'exact' | 'prefix' = 'p
 
 export default function AdminShell({
   title,
+  subtitle,
   children,
 }: {
   title: string;
+  /** Short guidance under the page title (ops workflows). */
+  subtitle?: string;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -291,6 +294,9 @@ export default function AdminShell({
               Committee tools
             </p>
             <h2 className="text-headline-md text-primary">{title}</h2>
+            {subtitle ? (
+              <p className="text-body-sm text-on-surface-variant mt-2 max-w-2xl">{subtitle}</p>
+            ) : null}
           </div>
           <button
             type="button"
