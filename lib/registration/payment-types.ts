@@ -16,12 +16,10 @@ export interface OrderApiResponse {
     configured?: boolean;
     skipCheckout?: boolean;
     orderId?: string;
+    paymentSessionId?: string;
+    checkoutMode?: 'sandbox' | 'production';
     amount?: number;
     currency?: string;
-    keyId?: string;
-    name?: string;
-    email?: string;
-    contact?: string;
     registration_code?: string | null;
     amount_paid_paise?: number;
 }
@@ -34,34 +32,27 @@ export interface VerifyResponse {
     registration_code?: string | null;
 }
 
-/** Fully validated order handed to Razorpay Checkout. */
+/** Fully validated order handed to Cashfree Checkout. */
 export interface CheckoutOrderPayload {
     orderId: string;
-    amount: number;
-    currency: string;
-    keyId: string;
-    name: string;
-    email: string;
-    contact: string;
+    paymentSessionId: string;
+    mode: 'sandbox' | 'production';
+    description?: string;
 }
 
 /**
- * Turns a raw order response into a checkout payload. Returns null when the
- * required fields (order id, amount, key id) are missing, so Razorpay is never
- * opened with incomplete data.
+ * Turns a raw order response into a checkout payload. Returns null when
+ * required fields are missing, so Cashfree is never opened with incomplete data.
  */
 export function toCheckoutOrder(
     response: OrderApiResponse,
-    fallback: { name: string; email: string; contact: string }
+    _fallback?: { name: string; email: string; contact: string }
 ): CheckoutOrderPayload | null {
-    if (!response.orderId || typeof response.amount !== 'number' || !response.keyId) return null;
+    if (!response.orderId || !response.paymentSessionId) return null;
     return {
         orderId: response.orderId,
-        amount: response.amount,
-        currency: response.currency || 'INR',
-        keyId: response.keyId,
-        name: response.name || fallback.name,
-        email: response.email || fallback.email,
-        contact: response.contact || fallback.contact,
+        paymentSessionId: response.paymentSessionId,
+        mode: response.checkoutMode === 'production' ? 'production' : 'sandbox',
+        description: 'Event registration',
     };
 }

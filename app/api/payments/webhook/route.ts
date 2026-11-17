@@ -1,85 +1,93 @@
 // app/api/payments/webhook/route.ts
-// Razorpay server-to-server notification. It is the backstop for a payment whose browser
-// callback (verify) never arrived. The signature is checked against the raw body, then the
-// captured payment is fetched from Razorpay and applied through applyRazorpayPayment.
-// The registration is found from the order's notes, so it does not depend on the order
-// stored on the row. That matters when a member paid an order that was later replaced.
+// Cashfree server-to-server notification (backstop when browser verify never arrives).
 
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { applyRazorpayPayment } from '@/lib/events/mark-paid';
-import { getRazorpayClient } from '@/lib/payments/razorpay';
+import { applyDonationPayment } from '@/lib/donations/mark-paid';
+import { applyGatewayPayment } from '@/lib/events/mark-paid';
+import {
+  cashfreeCapturedAmountPaise,
+  isCashfreeConfigured,
+  verifyCashfreeWebhookSignature,
+} from '@/lib/payments/cashfree';
 import { createAdminClient } from '@/lib/supabase-admin';
 
-type WebhookPayment = {
-  id: string;
-  order_id: string;
-  status: string;
-  amount: number;
-  notes?: Record<string, string> | null;
-};
-
-type WebhookEvent = {
-  event?: string;
-  payload?: {
-    payment?: { entity?: { id?: string; order_id?: string } };
+type CashfreeWebhookPayload = {
+  type?: string;
+  data?: {
+    order?: { order_id?: string; order_tags?: Record<string, string> | null };
+    payment?: { cf_payment_id?: string; payment_status?: string };
   };
 };
 
-function webhookSignatureMatches(rawBody: string, signature: string): boolean {
-  const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
-  if (!secret) return false;
-  const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
-  const expectedBuffer = Buffer.from(expected);
-  const givenBuffer = Buffer.from(signature);
-  if (expectedBuffer.length !== givenBuffer.length) return false;
-  return timingSafeEqual(expectedBuffer, givenBuffer);
-}
-
 export async function POST(request: Request) {
+  if (!isCashfreeConfigured()) {
+    return NextResponse.json({ error: 'Payments are not configured' }, { status: 503 });
+  }
+
   const rawBody = await request.text();
-  const signature = request.headers.get('x-razorpay-signature') || '';
-  if (!signature || !webhookSignatureMatches(rawBody, signature)) {
+  const signature = request.headers.get('x-webhook-signature') || '';
+  const timestamp = request.headers.get('x-webhook-timestamp') || '';
+  if (!signature || !verifyCashfreeWebhookSignature(rawBody, signature, timestamp)) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
   }
 
-  let event: WebhookEvent;
+  let event: CashfreeWebhookPayload;
   try {
-    event = JSON.parse(rawBody) as WebhookEvent;
+    event = JSON.parse(rawBody) as CashfreeWebhookPayload;
   } catch {
     return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
   }
 
-  // Only captured payments change money state. Other events are acknowledged and ignored.
-  if (event.event !== 'payment.captured') {
+  const type = String(event.type || '');
+  const successTypes = new Set([
+    'PAYMENT_SUCCESS_WEBHOOK',
+    'PAYMENT_CHARGES_WEBHOOK',
+    'ORDER_PAID',
+  ]);
+  if (!successTypes.has(type)) {
     return NextResponse.json({ ok: true, ignored: true });
   }
 
-  const paymentId = event.payload?.payment?.entity?.id;
-  if (!paymentId) return NextResponse.json({ ok: true, ignored: true });
+  const orderId =
+    event.data?.order?.order_id ||
+    (event.data?.payment as { order_id?: string } | undefined)?.order_id;
+  if (!orderId) return NextResponse.json({ ok: true, ignored: true });
 
-  const client = getRazorpayClient();
-  if (!client) return NextResponse.json({ error: 'Payments are not configured' }, { status: 503 });
-
-  let payment: WebhookPayment;
-  try {
-    payment = (await client.payments.fetch(paymentId)) as unknown as WebhookPayment;
-  } catch (err) {
-    console.error('webhook fetch payment', err);
-    // A 5xx makes Razorpay retry the notification later.
-    return NextResponse.json({ error: 'Could not fetch payment' }, { status: 502 });
+  const captured = await cashfreeCapturedAmountPaise(String(orderId));
+  if (!captured.ok) {
+    if (captured.status >= 500) {
+      return NextResponse.json({ error: captured.message }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, ignored: true });
   }
 
-  if (payment.status !== 'captured') return NextResponse.json({ ok: true, ignored: true });
-
-  // The registration is named in the order's notes when the order was created.
-  const registrationId = payment.notes?.registration_id;
+  const tags = event.data?.order?.order_tags || {};
+  let registrationId = String(tags.registration_id || '').trim();
   if (!registrationId) {
-    console.error('webhook: captured payment without registration_id', paymentId);
+    registrationId = (await lookupRegistrationIdByOrder(String(orderId))) || '';
+  }
+
+  const donationIdOnly = !registrationId ? String(tags.donation_id || '').trim() : '';
+  if (donationIdOnly) {
+    const donResult = await applyDonationPayment({
+      donationId: donationIdOnly,
+      razorpay: {
+        order_id: String(orderId),
+        payment_id: captured.paymentId,
+        signature: null,
+      },
+    });
+    if (!donResult.ok && (donResult.status || 0) >= 500) {
+      return NextResponse.json({ error: donResult.error }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, donation: true, payment_status: donResult.payment_status });
+  }
+
+  if (!registrationId) {
+    console.error('webhook: no registration_id for order', orderId);
     return NextResponse.json({ ok: true, unmatched: true });
   }
 
-  // Confirm the registration belongs to this order's account before applying anything.
   const admin = createAdminClient();
   const { data: reg } = await admin
     .from('event_registrations')
@@ -87,24 +95,47 @@ export async function POST(request: Request) {
     .eq('id', registrationId)
     .maybeSingle();
   if (!reg) {
-    console.error('webhook: registration not found', registrationId, paymentId);
+    console.error('webhook: registration not found', registrationId, orderId);
     return NextResponse.json({ ok: true, unmatched: true });
   }
 
-  const result = await applyRazorpayPayment({
+  const result = await applyGatewayPayment({
     registrationId,
-    orderId: payment.order_id,
-    paymentId: payment.id,
+    orderId: String(orderId),
+    paymentId: captured.paymentId,
     signature: null,
-    amountPaise: Number(payment.amount),
+    amountPaise: captured.amountPaise,
   });
 
   if (!result.ok) {
-    // Non-retryable answers are acknowledged so Razorpay stops resending. Server faults retry.
     if (result.status >= 500) return NextResponse.json({ error: result.error }, { status: 500 });
-    console.error('webhook apply', result.error, paymentId);
+    console.error('webhook apply', result.error, orderId);
     return NextResponse.json({ ok: true, unapplied: true });
   }
 
   return NextResponse.json({ ok: true, payment_status: result.payment_status });
+}
+
+async function lookupRegistrationIdByOrder(orderId: string): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data: reg } = await admin
+    .from('event_registrations')
+    .select('id')
+    .eq('razorpay_order_id', orderId)
+    .maybeSingle();
+  if (reg?.id) return reg.id;
+
+  const { data: donation } = await admin
+    .from('donations')
+    .select('id,account_id')
+    .eq('razorpay_order_id', orderId)
+    .maybeSingle();
+  if (!donation) return null;
+
+  const { data: linkedReg } = await admin
+    .from('event_registrations')
+    .select('id')
+    .eq('donation_id', donation.id)
+    .maybeSingle();
+  return linkedReg?.id ?? null;
 }

@@ -4,8 +4,12 @@
  */
 import {
   assertOfflineProofFields,
+  assertUpiRefNo,
   buildUpiPayUri,
   formatInr,
+  normalizeUpiRefNoInput,
+  normalizeUpiTransactionId,
+  shortUpiPaymentRef,
   validateBankAccountFields,
 } from '../lib/payments/bank-details.ts';
 import {
@@ -18,6 +22,13 @@ import {
   venuePassPaymentCue,
   verificationStatusLabel,
 } from '../lib/payments/offline-proof.ts';
+import {
+  UPI_MIN_TOTAL_PAISE,
+  isUpiEligible,
+  istDayUtcBounds,
+  nextUpiWindowOpensAt,
+  upiQuotaForAmount,
+} from '../lib/payments/upi-quota.ts';
 
 if (formatInr(50000) !== '₹500') throw new Error(`formatInr 50000 → ${formatInr(50000)}`);
 if (formatInr(10150) !== '₹101.5') throw new Error(`formatInr 10150 → ${formatInr(10150)}`);
@@ -38,6 +49,20 @@ if (q.get('pn') !== 'SFS Alumni') throw new Error('pn');
 if (q.get('am') !== '500.00') throw new Error(`am ${q.get('am')}`);
 if (q.get('cu') !== 'INR') throw new Error('cu');
 if (q.get('tn') !== 'Jubilee') throw new Error('tn');
+if (q.get('tr')) throw new Error('tr should be absent');
+
+const uriWithTr = buildUpiPayUri({
+  upiId: 'alumni@okaxis',
+  amountPaise: 100,
+  transactionId: 'SFS-4K7M2',
+  note: 'Jubilee',
+});
+if (!uriWithTr.includes('pa=alumni@okaxis')) throw new Error('pa should stay unencoded');
+const qTr = new URL(uriWithTr.replace('upi://pay?', 'https://u/?')).searchParams;
+if (qTr.get('tr') !== 'SFS-4K7M2') throw new Error(`tr code ${qTr.get('tr')}`);
+if (qTr.get('tn') !== 'SFS-4K7M2') throw new Error(`tn code ${qTr.get('tn')}`);
+if (qTr.get('pn') !== 'SFS-4K7M2') throw new Error(`pn code ${qTr.get('pn')}`);
+if (normalizeUpiTransactionId('a'.repeat(40)).length !== 35) throw new Error('tr max len');
 
 const okAccount = validateBankAccountFields({
   label: 'Jubilee',
@@ -87,12 +112,38 @@ try {
   if (!(e instanceof Error) || !/upi/i.test(e.message)) throw e;
 }
 
+const REF12 = '123456789012';
+if (normalizeUpiRefNoInput(' 12 34 56 78 90 12 ') !== REF12) {
+  throw new Error('normalizeUpiRefNoInput spaces');
+}
+if (normalizeUpiRefNoInput('12ab34cd5678') !== '12345678') {
+  throw new Error('normalizeUpiRefNoInput non-digit');
+}
+if (assertUpiRefNo(REF12) !== REF12) throw new Error('assertUpiRefNo ok');
+
+try {
+  assertUpiRefNo('');
+  throw new Error('expected upi ref required');
+} catch (e) {
+  if (!(e instanceof Error) || e.message !== 'UPI Ref No. is required') throw e;
+}
+
+try {
+  assertUpiRefNo('12345');
+  throw new Error('expected upi ref length');
+} catch (e) {
+  if (!(e instanceof Error) || !/12-digit/i.test(e.message)) throw e;
+}
+
 try {
   assertOfflineProofFields({ utr: '', file: null });
   throw new Error('expected utr required');
 } catch (e) {
-  if (!(e instanceof Error) || e.message !== 'UTR / reference is required') throw e;
+  if (!(e instanceof Error) || e.message !== 'UPI Ref No. is required') throw e;
 }
+
+const regNoUtr = assertOfflineProofFields({ utr: '', file: null, allowMissingUtr: true });
+if (regNoUtr.utr !== '' || regNoUtr.file) throw new Error('allowMissingUtr registration');
 
 try {
   assertOfflineProofFields({
@@ -101,23 +152,23 @@ try {
   });
   throw new Error('expected utr required even with screenshot');
 } catch (e) {
-  if (!(e instanceof Error) || e.message !== 'UTR / reference is required') throw e;
+  if (!(e instanceof Error) || e.message !== 'UPI Ref No. is required') throw e;
 }
 
-const withUtr = assertOfflineProofFields({ utr: '  ABC123  ', file: null });
-if (withUtr.utr !== 'ABC123' || withUtr.file) throw new Error('utr only');
+const withUtr = assertOfflineProofFields({ utr: `  ${REF12.slice(0, 6)} ${REF12.slice(6)}  `, file: null });
+if (withUtr.utr !== REF12 || withUtr.file) throw new Error('utr only');
 
 const withBoth = assertOfflineProofFields({
-  utr: 'REF9',
+  utr: REF12,
   file: { type: 'image/png', size: 100, name: 'x.png' },
 });
-if (withBoth.utr !== 'REF9' || !withBoth.file || withBoth.file.ext !== 'png') {
+if (withBoth.utr !== REF12 || !withBoth.file || withBoth.file.ext !== 'png') {
   throw new Error('utr + file');
 }
 
 try {
   assertOfflineProofFields({
-    utr: 'REF',
+    utr: REF12,
     file: { type: 'image/gif', size: 10, name: 'x.gif' },
   });
   throw new Error('expected mime fail');
@@ -127,7 +178,7 @@ try {
 
 try {
   assertOfflineProofFields({
-    utr: 'REF',
+    utr: REF12,
     file: { type: 'image/jpeg', size: 4_000_001, name: 'x.jpg' },
   });
   throw new Error('expected size fail');
@@ -140,6 +191,9 @@ if (bankReferenceFromProof({ utr: '  REF1  ', hasScreenshot: false }) !== 'REF1'
 }
 if (bankReferenceFromProof({ utr: '', hasScreenshot: true }) !== SCREENSHOT_BANK_REFERENCE) {
   throw new Error('bank ref from screenshot');
+}
+if (bankReferenceFromProof({ utr: '', hasScreenshot: false, registrationUpiRef: 'abc12' }) !== 'abc12') {
+  throw new Error('bank ref from registrationUpiRef');
 }
 try {
   bankReferenceFromProof({ utr: '', hasScreenshot: false });
@@ -232,5 +286,32 @@ if (!homeAwaitingByBankRef || homeAwaitingByBankRef.badge !== 'Awaiting confirma
 if (venuePassPaymentCue({ confirmed: true, dueLabel: 'Due ₹0', pendingOfflineProof: true }) !== null) {
   throw new Error('home confirmed hides cue');
 }
+
+if (isUpiEligible(UPI_MIN_TOTAL_PAISE - 1)) throw new Error('upi min edge low');
+if (!isUpiEligible(UPI_MIN_TOTAL_PAISE)) throw new Error('upi min edge high');
+
+const blocked = upiQuotaForAmount({
+  amountPaise: 500_000,
+  daily_total_paise: 9_600_000,
+  daily_txn_count: 0,
+});
+if (blocked.quota_available || blocked.limit_reached_reason !== 'volume') {
+  throw new Error('upi volume cap');
+}
+
+const blockedCount = upiQuotaForAmount({
+  amountPaise: 500_000,
+  daily_total_paise: 0,
+  daily_txn_count: 20,
+});
+if (blockedCount.quota_available || blockedCount.limit_reached_reason !== 'count') {
+  throw new Error('upi count cap');
+}
+
+const bounds = istDayUtcBounds(new Date('2026-11-17T10:00:00+05:30'));
+if (bounds.dayLabel !== '2026-11-17') throw new Error(`ist day ${bounds.dayLabel}`);
+
+const nextOpen = nextUpiWindowOpensAt(new Date('2026-11-17T10:00:00+05:30'));
+if (!nextOpen.includes('T')) throw new Error('next open iso');
 
 console.log('ok: bank details');

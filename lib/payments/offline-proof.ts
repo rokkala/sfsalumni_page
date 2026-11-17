@@ -75,10 +75,14 @@ export function venuePassPaymentCue(input: {
 export function bankReferenceFromProof(input: {
   utr: string | null;
   hasScreenshot: boolean;
+  /** Normalized registration ref embedded in the UPI payment note (no UTR from member). */
+  registrationUpiRef?: string | null;
 }): string {
   const utr = String(input.utr ?? '').trim();
   if (utr) return utr;
   if (input.hasScreenshot) return SCREENSHOT_BANK_REFERENCE;
+  const regRef = String(input.registrationUpiRef ?? '').trim();
+  if (regRef) return regRef;
   throw new Error('Add a UTR reference or a payment screenshot');
 }
 

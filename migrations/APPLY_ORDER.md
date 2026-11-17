@@ -45,6 +45,8 @@ Run in SQL Editor, **filename order**:
 39. `20261113140000_member_roster.sql`
 40. `20261113150000_pii_access_hardening.sql`
 41. `20261114080000_portal_menu.sql`
+42. `20261115120000_payment_checkout_settings.sql`
+43. `20261117100000_offline_proofs_remittance.sql`
 
 ## 2. Data — `02_data/`
 

@@ -3,11 +3,18 @@
 // verified registrations count as settled and are not reported as balance-due exceptions.
 
 import { NextResponse } from 'next/server';
+import { summarizeDonationGifts, giftsPaidPaise, giftsPendingPaise } from '@/lib/admin/donation-summary';
 import { classifyRegistration, EXCEPTION_LABELS, type ExceptionKind } from '@/lib/admin/event-exceptions';
 import { ledgerFor, loadRegistrationRows, one, refreshRegistrations } from '@/lib/admin/registration-rows';
-import { STATE_LABELS, type RegistrationState } from '@/lib/admin/registration-ledger';
+import {
+    donationDueOnRegistration,
+    donationSettledOnRegistration,
+    STATE_LABELS,
+    type RegistrationState,
+} from '@/lib/admin/registration-ledger';
 import { requireVerifiedAdmin } from '@/lib/auth/admin-guard';
 import { clampGuestCount } from '@/lib/registration/registration';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 type ExceptionOut = {
     id: string;
@@ -52,6 +59,10 @@ export async function GET(request: Request) {
         billed_paise: 0,
         settled_paise: 0,
         due_paise: 0,
+        fees_settled_paise: 0,
+        fees_due_paise: 0,
+        reg_gifts_settled_paise: 0,
+        reg_gifts_due_paise: 0,
     };
     const kindCounts: Record<ExceptionKind, number> = {
         balance_due: 0,
@@ -72,6 +83,21 @@ export async function GET(request: Request) {
         totals.billed_paise += ledger.billedPaise;
         totals.settled_paise += ledger.settledPaise;
         totals.due_paise += ledger.duePaise;
+
+        const ledgerInput = {
+            payment_status: r.payment_status,
+            total_cost_paise: r.total_cost_paise,
+            amount_paid_paise: r.amount_paid_paise,
+            core_committee_manually_verified: r.core_committee_manually_verified,
+            bank_reference: r.bank_reference,
+            donation: one(r.donation),
+        };
+        const giftSettled = donationSettledOnRegistration(ledgerInput, ledger);
+        const giftDue = donationDueOnRegistration(ledgerInput, ledger);
+        totals.reg_gifts_settled_paise += giftSettled;
+        totals.reg_gifts_due_paise += giftDue;
+        totals.fees_settled_paise += ledger.settledPaise - giftSettled;
+        totals.fees_due_paise += ledger.duePaise - giftDue;
         if (r.checked_in_at) totals.checked_in_count += 1;
         stateCounts[ledger.state] += 1;
 
@@ -104,8 +130,17 @@ export async function GET(request: Request) {
         });
     }
 
+    const admin = createAdminClient();
+    const gifts = await summarizeDonationGifts(admin, { eventId: eventId || undefined });
+    const giftsPaid = giftsPaidPaise(gifts);
+    const giftsPending = giftsPendingPaise(gifts);
+
     return NextResponse.json({
         totals,
+        gifts,
+        gifts_paid_paise: giftsPaid,
+        gifts_pending_paise: giftsPending,
+        total_received_paise: totals.settled_paise + gifts.cause_gifts.paid_paise,
         state_counts: stateCounts,
         state_labels: STATE_LABELS,
         kind_counts: kindCounts,

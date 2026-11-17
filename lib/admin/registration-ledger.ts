@@ -49,6 +49,32 @@ function nonNegative(value: unknown): number {
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
+/** Gift portion of a registration row (paid or committee-verified). */
+export function donationSettledOnRegistration(
+    input: LedgerInput,
+    ledger?: RegistrationLedger
+): number {
+    const L = ledger ?? computeLedger(input);
+    const d = input.donation;
+    if (!d || d.payment_status === 'failed') return 0;
+    const amt = nonNegative(d.amount_paise);
+    if (amt < 1) return 0;
+    if (d.payment_status === 'paid') return amt;
+    if (L.confirmed) return amt;
+    return 0;
+}
+
+export function donationDueOnRegistration(
+    input: LedgerInput,
+    ledger?: RegistrationLedger
+): number {
+    const L = ledger ?? computeLedger(input);
+    const d = input.donation;
+    if (!d || d.payment_status === 'failed') return 0;
+    const amt = nonNegative(d.amount_paise);
+    return Math.max(0, amt - donationSettledOnRegistration(input, L));
+}
+
 export function computeLedger(input: LedgerInput): RegistrationLedger {
     const feeBilled = nonNegative(input.total_cost_paise);
     const feeRecorded = nonNegative(input.amount_paid_paise);

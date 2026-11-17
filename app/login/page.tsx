@@ -37,7 +37,7 @@ function LoginForm() {
             });
             const payload = await res.json().catch(() => ({}));
             if (!res.ok) {
-                setError(payload.error || 'Invalid username or password');
+                setError(payload.error || 'Invalid email, username, or password');
                 setLoading(false);
                 return;
             }
@@ -88,7 +88,7 @@ function LoginForm() {
                     <form onSubmit={handleLogin} className="space-y-4">
                         <div className="flex flex-col">
                             <label className="text-label-md text-primary mb-2 uppercase tracking-wider" htmlFor="login-username">
-                                Username
+                                Email or username
                             </label>
                             <input
                                 id="login-username"
@@ -102,7 +102,7 @@ function LoginForm() {
                                 className="px-4 py-3.5 rounded-lg border border-outline-variant text-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:bg-surface-container disabled:text-on-surface-variant"
                             />
                             <p className="text-label-sm text-on-surface-variant mt-1">
-                                Your email is your username unless you chose a different one.
+                                Use the email you signed up with, or your custom username if you set one at registration.
                             </p>
                         </div>
 

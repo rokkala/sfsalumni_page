@@ -2,6 +2,7 @@ import QRCode from 'qrcode';
 import {
   clearRegistrationCode,
   ensureRegistrationCode,
+  reserveRegistrationCode,
   isEligibleForRegistrationCode,
   normalizeRegistrationCode,
   registrationCodeFrom,
@@ -97,6 +98,11 @@ assert(issue.state.writes === 1, 'code is written once');
 const partial = memoryAdmin(null);
 assert((await ensureRegistrationCode(partial.api, 'id', 'partial', () => 'SFS-NEW11')) === null, 'partial writes nothing');
 assert(partial.state.writes === 0, 'partial does not update');
+
+assert(
+  (await reserveRegistrationCode(memoryAdmin(null).api, 'id', () => 'SFS-SAVE1')) === 'SFS-SAVE1',
+  'reserve at save for UPI description'
+);
 
 const missing = memoryAdmin(null);
 missing.state.missing = true;

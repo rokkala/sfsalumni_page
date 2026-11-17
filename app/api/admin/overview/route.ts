@@ -1,4 +1,10 @@
 import { NextResponse } from 'next/server';
+import {
+  giftsPaidPaise,
+  giftsPendingPaise,
+  summarizeDonationGifts,
+} from '@/lib/admin/donation-summary';
+import { loadReconciliationSnapshot } from '@/lib/admin/reconciliation-snapshot';
 import { summarizeOverviewStats } from '@/lib/admin/registration-ledger';
 import { loadRegistrationRows, one } from '@/lib/admin/registration-rows';
 import { requireVerifiedAdmin } from '@/lib/auth/admin-guard';
@@ -57,6 +63,11 @@ export async function GET() {
 
   const pendingApprovals = (pendingMembers.count || 0) + pendingMemories + pendingStories;
 
+  const [gifts, reconciliation] = await Promise.all([
+    summarizeDonationGifts(admin),
+    loadReconciliationSnapshot(admin),
+  ]);
+
   return NextResponse.json({
     pendingMembers: pendingMembers.count || 0,
     publishedEvents,
@@ -67,6 +78,11 @@ export async function GET() {
     registrationCount: money.registrationCount,
     amountPaidPaise: money.amountPaidPaise,
     amountDuePaise: money.amountDuePaise,
+    gifts,
+    giftsPaidPaise: giftsPaidPaise(gifts),
+    giftsPendingPaise: giftsPendingPaise(gifts),
+    totalReceivedPaise: money.amountPaidPaise + gifts.cause_gifts.paid_paise,
+    reconciliation,
     catalogReady,
   });
 }

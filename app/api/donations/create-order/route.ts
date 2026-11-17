@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { NextResponse } from 'next/server';
 import { getCurrentAccount } from '@/lib/auth/request';
 import {
@@ -5,14 +6,22 @@ import {
   assertDonationMessage,
 } from '@/lib/donations/validate';
 import {
-  getRazorpayClient,
-  isRazorpayConfigured,
-  razorpayKeyId,
-  razorpayKeysAligned,
-} from '@/lib/payments/razorpay';
+  appBaseUrl,
+  cashfreePublicMode,
+  createCashfreeOrder,
+  isCashfreeConfigured,
+} from '@/lib/payments/cashfree';
+import {
+  loadCheckoutSettings,
+  memberOnlineCheckoutAvailable,
+} from '@/lib/payments/checkout-settings';
 import { createAdminClient } from '@/lib/supabase-admin';
 
 export const dynamic = 'force-dynamic';
+
+function newGatewayOrderId(prefix: string): string {
+  return `${prefix}_${randomBytes(8).toString('hex')}_${Date.now()}`.slice(0, 40);
+}
 
 export async function POST(request: Request) {
   const me = await getCurrentAccount();
@@ -24,21 +33,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Membership must be verified to donate' }, { status: 403 });
   }
 
-  if (!isRazorpayConfigured()) {
-    return NextResponse.json(
-      {
-        error: 'Payments are not configured yet. Please try again later.',
-        configured: false,
-      },
-      { status: 503 }
-    );
-  }
+  const admin = createAdminClient();
+  const checkoutSettings = await loadCheckoutSettings(admin);
 
-  if (!razorpayKeysAligned()) {
+  if (!memberOnlineCheckoutAvailable(checkoutSettings)) {
     return NextResponse.json(
       {
-        error:
-          'Payment keys mismatch: NEXT_PUBLIC_RAZORPAY_KEY_ID must equal RAZORPAY_KEY_ID (same test or live key).',
+        error: isCashfreeConfigured()
+          ? 'Online checkout is turned off. Pay by Bank / UPI or ask the committee.'
+          : 'Payments are not configured yet. Please try again later.',
         configured: false,
       },
       { status: 503 }
@@ -63,7 +66,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const admin = createAdminClient();
   const { data: cause, error: causeErr } = await admin
     .from('donation_causes')
     .select('id,title,active')
@@ -91,54 +93,57 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Could not start donation' }, { status: 500 });
   }
 
-  const client = getRazorpayClient();
-  if (!client) {
-    return NextResponse.json({ error: 'Payments are not configured', configured: false }, { status: 503 });
-  }
+  const base = appBaseUrl();
+  const gatewayOrderId = newGatewayOrderId(`don_${donation.id.slice(0, 8)}`);
+  const created = await createCashfreeOrder({
+    orderId: gatewayOrderId,
+    amountPaise,
+    customer: {
+      id: me.id,
+      name: me.full_name || 'Alumni',
+      email: me.email || 'alumni@example.com',
+      phone: me.phone_number || '',
+    },
+    returnUrl: `${base}/member/donate?cf_order_id=${encodeURIComponent(gatewayOrderId)}`,
+    notifyUrl: `${base}/api/payments/webhook`,
+    tags: {
+      donation_id: donation.id,
+      cause_id: cause.id,
+      account_id: me.id,
+    },
+    note: `Donation · ${cause.title}`,
+  });
 
-  try {
-    const order = await client.orders.create({
-      amount: amountPaise,
-      currency: 'INR',
-      receipt: `don_${donation.id.slice(0, 8)}_${Date.now()}`.slice(0, 40),
-      notes: {
-        donation_id: donation.id,
-        cause_id: cause.id,
-        account_id: me.id,
-      },
-    });
-
-    const { error: updError } = await admin
-      .from('donations')
-      .update({
-        razorpay_order_id: order.id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', donation.id);
-
-    if (updError) {
-      console.error('donation order persist', updError);
-      return NextResponse.json({ error: 'Could not save payment order' }, { status: 500 });
-    }
-
-    return NextResponse.json({
-      ok: true,
-      donationId: donation.id,
-      orderId: order.id,
-      amount: amountPaise,
-      currency: 'INR',
-      keyId: razorpayKeyId(),
-      name: me.full_name,
-      email: me.email,
-      contact: me.phone_number,
-      description: `Donation · ${cause.title}`,
-    });
-  } catch (err) {
-    console.error('donation razorpay order', err);
+  if (!created.ok) {
+    console.error('donation cashfree order', created.message);
     await admin
       .from('donations')
       .update({ payment_status: 'failed', updated_at: new Date().toISOString() })
       .eq('id', donation.id);
     return NextResponse.json({ error: 'Could not create payment order' }, { status: 502 });
   }
+
+  const { error: updError } = await admin
+    .from('donations')
+    .update({
+      razorpay_order_id: created.orderId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', donation.id);
+
+  if (updError) {
+    console.error('donation order persist', updError);
+    return NextResponse.json({ error: 'Could not save payment order' }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    donationId: donation.id,
+    orderId: created.orderId,
+    paymentSessionId: created.paymentSessionId,
+    checkoutMode: cashfreePublicMode(),
+    amount: amountPaise,
+    currency: 'INR',
+    description: `Donation · ${cause.title}`,
+  });
 }

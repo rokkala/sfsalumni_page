@@ -5,10 +5,34 @@ import { createPortal } from 'react-dom';
 import AmountWithFx from '@/components/amount-with-fx';
 import {
   buildUpiPayUri,
+  normalizeUpiRefNoInput,
+  normalizeUpiTransactionId,
+  shortUpiPaymentRef,
+  UPI_REF_NO_LEN,
+  UPI_REF_NO_PATTERN,
   type BankAccountPublic,
 } from '@/lib/payments/bank-details';
+import { normalizeRegistrationCode } from '@/lib/events/registration-code-format';
+import {
+  REMITTANCE_METHODS,
+  remittanceMethodLabel,
+  type RemittanceMethod,
+} from '@/lib/payments/remittance-validate';
+import {
+  formatNextUpiWindowIst,
+  type UpiQuotaSnapshot,
+} from '@/lib/payments/upi-quota';
 
 export type { BankAccountPublic };
+
+function defaultPaymentDateIst(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
 
 export type ExistingOfflineProof = {
   utr: string | null;
@@ -22,6 +46,8 @@ type Props = {
   account: BankAccountPublic;
   amountPaise: number;
   note?: string;
+  /** Pre-filled UPI `tr` in the QR (e.g. registration id). */
+  transactionId?: string;
   source:
     | { type: 'registration'; registrationId: string }
     | { type: 'donation'; causeId: string; message?: string };
@@ -46,12 +72,14 @@ export default function OfflinePayModal({
   account,
   amountPaise,
   note,
+  transactionId,
   source,
   existingProof = null,
   onSubmitted,
   submitUrl = '/api/payments/offline-proof',
 }: Props) {
   const titleId = useId();
+  const photoInputId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
   const [mounted, setMounted] = useState(false);
   const [qrSrc, setQrSrc] = useState('');
@@ -62,16 +90,45 @@ export default function OfflinePayModal({
   const [copied, setCopied] = useState('');
   const [phase, setPhase] = useState<'pay' | 'thanks'>('pay');
   const [thanksMessage, setThanksMessage] = useState('');
+  const [method, setMethod] = useState<RemittanceMethod>('neft_rtgs');
+  const [paymentDate, setPaymentDate] = useState(defaultPaymentDateIst);
+  const [reference, setReference] = useState('');
+  const [challanNumber, setChallanNumber] = useState('');
+  const [repName, setRepName] = useState('');
+  const [batchYear, setBatchYear] = useState('');
+  const [section, setSection] = useState('');
+  const [repPhone, setRepPhone] = useState('');
+  const [foreignReference, setForeignReference] = useState('');
+  const [amountForeign, setAmountForeign] = useState('');
+  const [currency, setCurrency] = useState('');
+  const [amountInrReported, setAmountInrReported] = useState('');
+  const [upiQuota, setUpiQuota] = useState<UpiQuotaSnapshot | null>(null);
   const proofLocked = existingProof?.status === 'pending';
+  const submitLabel =
+    source.type === 'donation'
+      ? { idle: 'Pay', busy: 'Paying…' }
+      : { idle: 'Submit for verification', busy: 'Submitting…' };
 
-  const upiUri = account.upi_id
-    ? buildUpiPayUri({
-        upiId: account.upi_id,
-        amountPaise,
-        payeeName: account.account_name,
-        note: note || account.label,
-      })
-    : null;
+  const upiTr =
+    (transactionId && normalizeRegistrationCode(transactionId)) ||
+    (transactionId ? normalizeUpiTransactionId(transactionId) : '');
+  const upiTrShort = upiTr.includes('-') ? upiTr : upiTr ? shortUpiPaymentRef(upiTr) : '';
+
+  const upiMethodAllowed =
+    Boolean(account.upi_id) &&
+    Boolean(upiQuota?.eligible) &&
+    Boolean(upiQuota?.quota_available);
+
+  const upiUri =
+    method === 'upi' && account.upi_id && upiMethodAllowed
+      ? buildUpiPayUri({
+          upiId: account.upi_id,
+          amountPaise,
+          payeeName: account.account_name,
+          note: note || account.label,
+          transactionId,
+        })
+      : null;
 
   useEffect(() => {
     setMounted(true);
@@ -79,12 +136,45 @@ export default function OfflinePayModal({
 
   useEffect(() => {
     if (!open) return;
-    setUtr(existingProof?.utr?.trim() || '');
+    setUtr(normalizeUpiRefNoInput(existingProof?.utr ?? ''));
     setFile(null);
     setError('');
     setPhase('pay');
     setThanksMessage('');
+    setMethod('neft_rtgs');
+    setPaymentDate(defaultPaymentDateIst());
+    setReference('');
+    setChallanNumber('');
+    setRepName('');
+    setBatchYear('');
+    setSection('');
+    setRepPhone('');
+    setForeignReference('');
+    setAmountForeign('');
+    setCurrency('');
+    setAmountInrReported('');
   }, [open, existingProof?.utr]);
+
+  useEffect(() => {
+    if (!open || amountPaise < 100) {
+      setUpiQuota(null);
+      return;
+    }
+    let cancel = false;
+    fetch(`/api/payments/bank-details?amountPaise=${encodeURIComponent(String(amountPaise))}`, {
+      cache: 'no-store',
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) => {
+        if (!cancel && payload?.upi) setUpiQuota(payload.upi as UpiQuotaSnapshot);
+      })
+      .catch(() => {
+        if (!cancel) setUpiQuota(null);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [open, amountPaise]);
 
   useEffect(() => {
     if (!open) return;
@@ -169,8 +259,29 @@ export default function OfflinePayModal({
       setError('A proof is already pending committee review.');
       return;
     }
-    if (!utr.trim()) {
-      setError('UTR / reference is required');
+    if (method === 'upi' && !upiMethodAllowed) {
+      setError(
+        upiQuota && !upiQuota.quota_available && upiQuota.next_opens_at
+          ? `UPI limit reached for today. Try again from ${formatNextUpiWindowIst(upiQuota.next_opens_at)}.`
+          : 'UPI is not available for this amount. Use NEFT/RTGS or another option.'
+      );
+      return;
+    }
+    if (method === 'upi') {
+      const utrNorm = normalizeUpiRefNoInput(utr);
+      if (!UPI_REF_NO_PATTERN.test(utrNorm)) {
+        setError(
+          'Enter the 12-digit UPI Ref No. from your payment receipt (not the app Transaction ID)'
+        );
+        return;
+      }
+      if (!file) {
+        setError('Upload a photo of your UPI payment.');
+        return;
+      }
+    }
+  if (!paymentDate.trim()) {
+      setError('Enter the payment date.');
       return;
     }
     setBusy(true);
@@ -178,7 +289,19 @@ export default function OfflinePayModal({
       const fd = new FormData();
       fd.set('sourceType', source.type);
       fd.set('paymentAccountId', account.id);
-      if (utr.trim()) fd.set('utr', utr.trim());
+      fd.set('remittanceMethod', method);
+      fd.set('paymentDate', paymentDate);
+      fd.set('utr', method === 'upi' ? normalizeUpiRefNoInput(utr) : '');
+      fd.set('reference', reference);
+      fd.set('challanNumber', challanNumber);
+      fd.set('repName', repName);
+      fd.set('batchYear', batchYear);
+      fd.set('section', section);
+      fd.set('repPhone', repPhone);
+      fd.set('foreignReference', foreignReference);
+      fd.set('amountForeign', amountForeign);
+      fd.set('currency', currency);
+      fd.set('amountInrReported', amountInrReported);
       if (file) fd.set('screenshot', file);
       if (source.type === 'registration') {
         fd.set('registrationId', source.registrationId);
@@ -214,7 +337,7 @@ export default function OfflinePayModal({
   if (account.bank_name) {
     rows.push({ key: 'bank', label: 'Bank', value: account.bank_name });
   }
-  if (account.upi_id) {
+  if (account.upi_id && method === 'upi' && upiMethodAllowed) {
     rows.push({ key: 'upi', label: 'UPI ID', value: account.upi_id });
   }
 
@@ -300,10 +423,11 @@ export default function OfflinePayModal({
             <div className="sticky top-0 flex items-start justify-between gap-3 bg-surface border-b border-outline-variant px-5 py-4">
               <div>
                 <h2 id={titleId} className="text-lg font-semibold text-on-surface">
-                  Bank / UPI transfer
+                  Submit payment proof
                 </h2>
                 <p className="text-sm text-on-surface-variant mt-1">
-                  Pay the amount below to <strong>{account.label}</strong>, then submit proof.
+                  Pay the amount below to <strong>{account.label}</strong> using your chosen method,
+                  then submit proof for committee verification.
                 </p>
                 <div className="mt-2">
                   <AmountWithFx
@@ -325,6 +449,61 @@ export default function OfflinePayModal({
             </div>
 
             <div className="px-5 py-4 space-y-4">
+              {upiQuota && !upiQuota.eligible ? (
+                <p className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-sm text-on-surface-variant">
+                  UPI is available only when your total due including donation is Rs. 5,000 or more.
+                  Use NEFT/RTGS, cash/cheque deposit, your class representative, or foreign remittance
+                  below.
+                </p>
+              ) : null}
+              {upiQuota?.eligible && !upiQuota.quota_available && upiQuota.next_opens_at ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                  UPI limit reached for today. You can try UPI again from{' '}
+                  <strong>{formatNextUpiWindowIst(upiQuota.next_opens_at)}</strong>. Other payment
+                  methods remain available.
+                </p>
+              ) : null}
+
+              <fieldset className="space-y-2">
+                <legend className="text-xs uppercase tracking-wider text-on-surface-variant">
+                  How did you pay?
+                </legend>
+                <div className="grid gap-2">
+                  {REMITTANCE_METHODS.map((m) => {
+                    const isUpi = m === 'upi';
+                    const disabled =
+                      isUpi &&
+                      (!account.upi_id ||
+                        !upiQuota?.eligible ||
+                        !upiQuota?.quota_available);
+                    return (
+                      <label
+                        key={m}
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                          disabled
+                            ? 'border-outline-variant/60 text-on-surface-variant opacity-60'
+                            : 'border-outline-variant cursor-pointer'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name={`${titleId}-method`}
+                          value={m}
+                          checked={method === m}
+                          disabled={busy || disabled}
+                          onChange={() => setMethod(m)}
+                          className="accent-primary"
+                        />
+                        {remittanceMethodLabel(m)}
+                        {isUpi && disabled && upiQuota && !upiQuota.eligible ? (
+                          <span className="text-xs">(min Rs. 5,000)</span>
+                        ) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
               <ul className="space-y-2">
                 {rows.map((r) => (
                   <li
@@ -348,7 +527,7 @@ export default function OfflinePayModal({
                 ))}
               </ul>
 
-              {account.upi_id ? (
+              {account.upi_id && method === 'upi' && upiMethodAllowed ? (
                 <div className="rounded-xl border border-outline-variant bg-surface-container-low p-4 text-center">
                   <p className="text-xs uppercase tracking-wider mb-3 text-on-surface-variant">
                     Scan with any UPI app
@@ -366,40 +545,254 @@ export default function OfflinePayModal({
                     <p className="text-sm text-on-surface-variant">Preparing QR…</p>
                   )}
                   <p className="text-sm text-on-surface-variant mt-2 break-all">{account.upi_id}</p>
+                  {upiTr ? (
+                    <div className="mt-3 rounded-lg border border-outline-variant/80 bg-surface px-3 py-2 text-left">
+                      <p className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        SFS id (in payment description)
+                      </p>
+                      <p className="text-sm break-all tabular-nums text-on-surface mt-1">{upiTrShort}</p>
+                      <p className="text-xs text-on-surface-variant mt-1">
+                        Put this in your bank narration for committee recon. Your pass works at the gate
+                        after payment is confirmed.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void onCopy('reg-ref', upiTr)}
+                        className="mt-2 rounded-lg px-2 py-1 text-xs font-bold uppercase text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      >
+                        {copied === 'reg-ref' ? 'Copied' : 'Copy ref'}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
               <form onSubmit={onSubmit} className="space-y-3 border-t border-outline-variant pt-4">
-                <p className="text-sm text-on-surface-variant">
-                  After paying, enter the UTR / bank reference so the committee can verify. A screenshot
-                  is optional.
-                </p>
                 <label className="block">
                   <span className="text-xs uppercase tracking-wider text-on-surface-variant">
-                    UTR / reference *
+                    Payment date *
                   </span>
                   <input
-                    value={utr}
-                    onChange={(e) => setUtr(e.target.value)}
+                    type="date"
+                    value={paymentDate}
+                    onChange={(e) => setPaymentDate(e.target.value)}
                     disabled={busy}
                     required
-                    aria-required
-                    className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:opacity-70"
-                    placeholder="Bank / UPI reference number"
+                    className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
                   />
                 </label>
-                <label className="block">
+
+                {method === 'neft_rtgs' ? (
+                  <>
+                    <label className="block">
+                      <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        Payment reference (NEFT/RTGS) *
+                      </span>
+                      <input
+                        value={reference}
+                        onChange={(e) => setReference(e.target.value)}
+                        disabled={busy}
+                        required
+                        maxLength={64}
+                        className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface"
+                      />
+                    </label>
+                    <p className="text-sm text-on-surface-variant">
+                      Upload a photo of your bank confirmation.
+                    </p>
+                  </>
+                ) : null}
+
+                {method === 'cash_cheque' ? (
+                  <>
+                    <label className="block">
+                      <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        Challan number *
+                      </span>
+                      <input
+                        value={challanNumber}
+                        onChange={(e) => setChallanNumber(e.target.value)}
+                        disabled={busy}
+                        required
+                        maxLength={64}
+                        className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface"
+                      />
+                    </label>
+                    <p className="text-sm text-on-surface-variant">Upload a photo of your deposit slip.</p>
+                  </>
+                ) : null}
+
+                {method === 'class_representative' ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block sm:col-span-2">
+                      <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        Representative name *
+                      </span>
+                      <input
+                        value={repName}
+                        onChange={(e) => setRepName(e.target.value)}
+                        disabled={busy}
+                        required
+                        className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        Batch year *
+                      </span>
+                      <input
+                        value={batchYear}
+                        onChange={(e) => setBatchYear(e.target.value)}
+                        disabled={busy}
+                        required
+                        className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        Section *
+                      </span>
+                      <input
+                        value={section}
+                        onChange={(e) => setSection(e.target.value)}
+                        disabled={busy}
+                        required
+                        className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface"
+                      />
+                    </label>
+                    <label className="block sm:col-span-2">
+                      <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        Phone number *
+                      </span>
+                      <input
+                        value={repPhone}
+                        onChange={(e) => setRepPhone(e.target.value)}
+                        disabled={busy}
+                        required
+                        inputMode="tel"
+                        className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface"
+                      />
+                    </label>
+                  </div>
+                ) : null}
+
+                {method === 'foreign' ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block sm:col-span-2">
+                      <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        Payment reference *
+                      </span>
+                      <input
+                        value={foreignReference}
+                        onChange={(e) => setForeignReference(e.target.value)}
+                        disabled={busy}
+                        required
+                        maxLength={64}
+                        className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        Non-INR amount *
+                      </span>
+                      <input
+                        value={amountForeign}
+                        onChange={(e) => setAmountForeign(e.target.value)}
+                        disabled={busy}
+                        required
+                        inputMode="decimal"
+                        className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface tabular-nums"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        Currency *
+                      </span>
+                      <input
+                        value={currency}
+                        onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+                        disabled={busy}
+                        required
+                        maxLength={8}
+                        placeholder="USD"
+                        className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface"
+                      />
+                    </label>
+                    <label className="block sm:col-span-2">
+                      <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        INR amount received *
+                      </span>
+                      <input
+                        value={amountInrReported}
+                        onChange={(e) => setAmountInrReported(e.target.value)}
+                        disabled={busy}
+                        required
+                        inputMode="decimal"
+                        className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface tabular-nums"
+                      />
+                    </label>
+                    <p className="text-sm text-on-surface-variant sm:col-span-2">
+                      Upload a photo of your transaction.
+                    </p>
+                  </div>
+                ) : null}
+
+                {method === 'upi' ? (
+                  <>
+                    <label className="block">
+                      <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        UPI Ref No. (12 digits) *
+                      </span>
+                      <input
+                        value={utr}
+                        onChange={(e) => setUtr(normalizeUpiRefNoInput(e.target.value))}
+                        onPaste={(e) => {
+                          e.preventDefault();
+                          setUtr(normalizeUpiRefNoInput(e.clipboardData.getData('text')));
+                        }}
+                        disabled={busy}
+                        required
+                        inputMode="numeric"
+                        autoComplete="off"
+                        maxLength={UPI_REF_NO_LEN}
+                        pattern="\d{12}"
+                        className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface tabular-nums tracking-widest focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                        placeholder="123456789012"
+                      />
+                    </label>
+                    <p className="text-sm text-on-surface-variant">
+                      Upload a photo of your UPI payment receipt.
+                    </p>
+                  </>
+                ) : null}
+
+                <div>
                   <span className="text-xs uppercase tracking-wider text-on-surface-variant">
-                    Screenshot (optional)
+                    {method === 'class_representative' ? 'Deposit slip photo (optional)' : 'Photo *'}
                   </span>
                   <input
+                    id={photoInputId}
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
                     disabled={busy}
+                    required={method !== 'class_representative'}
                     onChange={(e) => setFile(e.target.files?.[0] || null)}
-                    className="mt-1 block w-full text-sm text-on-surface"
+                    className="sr-only"
                   />
-                </label>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <label
+                      htmlFor={photoInputId}
+                      className={`inline-flex min-h-11 items-center justify-center rounded-lg border border-primary/40 bg-surface-container-low px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-primary cursor-pointer hover:bg-surface-container focus-within:outline-none focus-within:ring-2 focus-within:ring-primary/30 ${
+                        busy ? 'pointer-events-none opacity-50' : ''
+                      }`}
+                    >
+                      {file ? 'Replace photo' : 'Choose photo'}
+                    </label>
+                    <span className="text-sm text-on-surface-variant min-w-0 flex-1 truncate">
+                      {file?.name || 'JPEG, PNG or WebP · max 4 MB'}
+                    </span>
+                  </div>
+                </div>
                 {error ? (
                   <p
                     className="rounded-lg bg-red-50 text-red-700 text-sm p-3"
@@ -413,7 +806,7 @@ export default function OfflinePayModal({
                   disabled={busy}
                   className="w-full rounded-lg bg-primary text-on-primary px-4 py-3 text-sm font-bold uppercase tracking-wider disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary/30"
                 >
-                  {busy ? 'Registering…' : 'Register'}
+                  {busy ? submitLabel.busy : submitLabel.idle}
                 </button>
               </form>
             </div>

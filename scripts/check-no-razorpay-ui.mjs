@@ -1,5 +1,5 @@
 /**
- * Guards: user-facing payment UI must not offer Razorpay / portal checkout.
+ * Guards: user-facing payment must not reference Razorpay (Cashfree is the gateway).
  * Run: node scripts/check-no-razorpay-ui.mjs
  */
 import { readFileSync } from 'fs';
@@ -15,28 +15,22 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
-const donation = read('components/registration_page/registration-donation.tsx');
-assert(!donation.includes('Pay through this portal'), 'registration donation still offers portal pay');
-assert(!donation.includes("'portal'"), 'registration donation still has portal payment route');
+const paths = [
+  'components/registration_page/registration-donation.tsx',
+  'components/registration_page/registration-form.tsx',
+  'app/registration/page.tsx',
+  'components/registration_page/registration-success.tsx',
+  'app/member/donate/page.tsx',
+  'app/admin/donations/page.tsx',
+];
+
+for (const rel of paths) {
+  const text = read(rel);
+  assert(!/\bRazorpay\b/i.test(text), `${rel} still mentions Razorpay`);
+  assert(!text.includes('openRazorpayCheckout'), `${rel} still imports Razorpay checkout`);
+}
 
 const form = read('components/registration_page/registration-form.tsx');
-assert(!form.includes('onPayNow'), 'registration form still wires Razorpay pay button');
-assert(!form.includes("paymentRoute === 'portal'"), 'registration form still shows portal Pay');
+assert(form.includes('Pay online') || form.includes('onPayOnline'), 'registration form missing online pay');
 
-const regPage = read('app/registration/page.tsx');
-assert(!regPage.includes('openRazorpayCheckout'), 'registration page still imports Razorpay checkout');
-assert(!regPage.includes('payDue'), 'registration page still has Razorpay payDue');
-
-const success = read('components/registration_page/registration-success.tsx');
-assert(!success.includes('canPayMore'), 'success screen still offers Pay');
-assert(!success.includes('`Pay ${'), 'success screen still has Pay button');
-
-const donate = read('app/member/donate/page.tsx');
-assert(!donate.includes('Pay with Razorpay'), 'donate page still has Razorpay button');
-assert(!donate.includes('openRazorpayCheckout'), 'donate page still opens Razorpay');
-assert(!/\bRazorpay\b/.test(donate), 'donate page still mentions Razorpay');
-
-const adminDonate = read('app/admin/donations/page.tsx');
-assert(!/\bRazorpay\b/.test(adminDonate), 'admin donations page still mentions Razorpay');
-
-console.log('ok: no razorpay ui');
+console.log('ok: cashfree payment ui guard');

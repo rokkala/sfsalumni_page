@@ -1,4 +1,5 @@
 import { randomInt } from 'node:crypto';
+export { normalizeRegistrationCode } from './registration-code-format';
 
 /** No 0/O or 1/I/L — these are read aloud at the venue gate. */
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -14,16 +15,6 @@ export function registrationCodeFrom(bytes: ArrayLike<number>): string {
 
 export function newRegistrationCode(): string {
   return registrationCodeFrom([0, 1, 2, 3, 4].map(() => randomInt(ALPHABET.length)));
-}
-
-/** Accepts "sfs 4k7m2", "4K7M2", or the stored "SFS-4K7M2". */
-export function normalizeRegistrationCode(raw: string): string {
-  const compact = String(raw || '')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '');
-  if (!compact) return '';
-  const body = compact.startsWith('SFS') ? compact.slice(3) : compact;
-  return body ? `SFS-${body}` : '';
 }
 
 export function shouldIssueRegistrationCode(
@@ -93,24 +84,14 @@ export async function issueMissingPaidCodes(admin: RegistrationCodeAdmin): Promi
   }
 }
 
-/** Writes a code once, only when the registration is fully paid. */
-export async function ensureRegistrationCode(
+/** Reserves SFS-XXXXX at save for UPI bank recon; gate entry still requires payment settled. */
+export async function reserveRegistrationCode(
   admin: RegistrationCodeAdmin,
   registrationId: string,
-  paymentStatus: string,
   makeCode: () => string = newRegistrationCode
 ): Promise<string | null> {
-  if (paymentStatus !== 'paid') return null;
-
-  const current = await admin
-    .from('event_registrations')
-    .select('registration_code')
-    .eq('id', registrationId)
-    .maybeSingle();
-  if (current.error) return null;
-
-  const existing = current.data?.registration_code || null;
-  if (!shouldIssueRegistrationCode(paymentStatus, existing)) return existing;
+  const existing = await readRegistrationCode(admin, registrationId);
+  if (existing) return existing;
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = makeCode();
@@ -128,6 +109,19 @@ export async function ensureRegistrationCode(
     if (saved.data?.registration_code) return saved.data.registration_code;
   }
   return null;
+}
+
+/** Writes a code when fully paid; reuses an earlier reserved code when present. */
+export async function ensureRegistrationCode(
+  admin: RegistrationCodeAdmin,
+  registrationId: string,
+  paymentStatus: string,
+  makeCode: () => string = newRegistrationCode
+): Promise<string | null> {
+  const existing = await readRegistrationCode(admin, registrationId);
+  if (existing) return existing;
+  if (paymentStatus !== 'paid') return null;
+  return reserveRegistrationCode(admin, registrationId, makeCode);
 }
 
 /** Clears the registration code when payment is reversed (mark unpaid). */

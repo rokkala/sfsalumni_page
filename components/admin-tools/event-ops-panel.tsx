@@ -16,6 +16,16 @@ type Totals = {
     billed_paise: number;
     settled_paise: number;
     due_paise: number;
+    fees_settled_paise: number;
+    fees_due_paise: number;
+    reg_gifts_settled_paise: number;
+    reg_gifts_due_paise: number;
+};
+
+type GiftBucket = {
+    count: number;
+    paid_paise: number;
+    pending_paise: number;
 };
 
 type ExceptionRow = {
@@ -35,6 +45,13 @@ type ExceptionRow = {
 
 type Payload = {
     totals: Totals;
+    gifts?: {
+        cause_gifts: GiftBucket;
+        event_gifts: GiftBucket;
+    };
+    gifts_paid_paise?: number;
+    gifts_pending_paise?: number;
+    total_received_paise?: number;
     state_counts: Record<StateKey, number>;
     state_labels: Record<StateKey, string>;
     kind_counts: Record<string, number>;
@@ -138,6 +155,79 @@ export default function EventOpsPanel() {
                     Open registrations
                 </Link>
             </div>
+
+            {t && data?.gifts ? (
+                <section className="rounded-2xl border border-jubilee-gold-deep/25 bg-jubilee-gold-light/20 p-5 mb-6 space-y-4">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                        <div>
+                            <h2 className="text-headline-sm text-primary">Money together</h2>
+                            <p className="text-body-sm text-on-surface-variant mt-1 max-w-2xl">
+                                Registration fees, jubilee add-on gifts on the form, and separate cause
+                                gifts at <code className="text-label-sm">/member/donate</code>.
+                            </p>
+                        </div>
+                        <p className="text-headline-sm text-jubilee-gold-deep tabular-nums font-semibold">
+                            Total received{' '}
+                            {formatCostForDisplay(
+                                data.total_received_paise ??
+                                    t.settled_paise + data.gifts.cause_gifts.paid_paise
+                            )}
+                        </p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="rounded-xl border border-outline-variant bg-white p-4">
+                            <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">
+                                Registration fees received
+                            </p>
+                            <p className="mt-2 text-headline-sm text-primary tabular-nums">
+                                {formatCostForDisplay(t.fees_settled_paise ?? 0)}
+                            </p>
+                            <p className="text-label-sm text-on-surface-variant mt-1">
+                                Due {formatCostForDisplay(t.fees_due_paise ?? 0)}
+                            </p>
+                        </div>
+                        <div className="rounded-xl border border-outline-variant bg-white p-4">
+                            <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">
+                                Event add-on gifts
+                            </p>
+                            <p className="mt-2 text-headline-sm text-primary tabular-nums">
+                                {formatCostForDisplay(data.gifts.event_gifts.paid_paise)}
+                            </p>
+                            <p className="text-label-sm text-on-surface-variant mt-1">
+                                {data.gifts.event_gifts.count} pledged · pending{' '}
+                                {formatCostForDisplay(data.gifts.event_gifts.pending_paise)}
+                            </p>
+                        </div>
+                        <div className="rounded-xl border border-outline-variant bg-white p-4">
+                            <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">
+                                Cause gifts
+                            </p>
+                            <p className="mt-2 text-headline-sm text-primary tabular-nums">
+                                {formatCostForDisplay(data.gifts.cause_gifts.paid_paise)}
+                            </p>
+                            <p className="text-label-sm text-on-surface-variant mt-1">
+                                {data.gifts.cause_gifts.count} pledged · pending{' '}
+                                {formatCostForDisplay(data.gifts.cause_gifts.pending_paise)}
+                                {!eventId ? '' : ' · all causes (not filtered by event)'}
+                            </p>
+                        </div>
+                        <div className="rounded-xl border border-outline-variant bg-white p-4">
+                            <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">
+                                All gifts received
+                            </p>
+                            <p className="mt-2 text-headline-sm text-primary tabular-nums">
+                                {formatCostForDisplay(data.gifts_paid_paise ?? 0)}
+                            </p>
+                            <p className="text-label-sm text-on-surface-variant mt-1">
+                                Pending {formatCostForDisplay(data.gifts_pending_paise ?? 0)} ·{' '}
+                                <Link href="/admin/donations" className="text-primary underline">
+                                    Donations
+                                </Link>
+                            </p>
+                        </div>
+                    </div>
+                </section>
+            ) : null}
 
             <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5 mb-8">
                 {kpis.map((k) => {

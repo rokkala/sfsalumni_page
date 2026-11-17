@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import JubileeRegisterLink from '@/components/jubilee-register-link';
-import { registrationPath } from '@/lib/events/choose-event';
+import {
+  eventActionFromRegistration,
+  type EventRegistrationHint,
+} from '@/lib/events/event-cta';
 import { heroEventCopy } from '@/lib/events/hero-copy';
 import type { EventCatalog } from '@/lib/events/types';
 
@@ -23,8 +26,15 @@ const registerClass =
 const instagramClass =
   'inline-flex items-center gap-2.5 px-6 py-3.5 rounded-lg border border-secondary-fixed/50 bg-primary-container/50 hover:bg-primary-container/80 text-secondary-fixed text-label-md uppercase tracking-wider backdrop-blur-md transition-all';
 
+type RegistrationEventResponse = {
+  registration?: EventRegistrationHint | null;
+};
+
 export default function Hero() {
   const [events, setEvents] = useState<EventCatalog[]>([]);
+  const [regsByEventId, setRegsByEventId] = useState<
+    Record<string, EventRegistrationHint | null>
+  >({});
   const [loaded, setLoaded] = useState(false);
   const [index, setIndex] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
@@ -35,10 +45,38 @@ export default function Hero() {
       try {
         const eventsRes = await fetch('/api/events', { cache: 'no-store' });
         if (!active) return;
-        if (eventsRes.ok) {
-          const rows = (await eventsRes.json()) as EventCatalog[];
-          if (Array.isArray(rows)) setEvents(rows);
+        if (!eventsRes.ok) {
+          setEvents([]);
+          return;
         }
+        const rows = (await eventsRes.json()) as EventCatalog[];
+        if (!Array.isArray(rows)) {
+          setEvents([]);
+          return;
+        }
+
+        // Resolve registrations before publishing events so paid alumni never flash Register.
+        const next: Record<string, EventRegistrationHint | null> = {};
+        for (const event of rows) {
+          try {
+            const regRes = await fetch(
+              `/api/registration/event?eventId=${encodeURIComponent(event.id)}`,
+              { cache: 'no-store' }
+            );
+            if (!active) return;
+            if (regRes.ok) {
+              const body = (await regRes.json()) as RegistrationEventResponse;
+              next[event.id] = body.registration ?? null;
+            } else {
+              next[event.id] = null;
+            }
+          } catch {
+            next[event.id] = null;
+          }
+        }
+        if (!active) return;
+        setRegsByEventId(next);
+        setEvents(rows);
       } catch {
         if (active) setEvents([]);
       } finally {
@@ -107,7 +145,12 @@ export default function Hero() {
           aria-roledescription={events.length > 1 ? 'carousel' : undefined}
           aria-label={events.length > 1 ? 'Open events' : undefined}
         >
-          {slides.map((slide) => (
+          {slides.map((slide) => {
+            const action =
+              slide.id === 'fallback'
+                ? null
+                : eventActionFromRegistration(slide.id, regsByEventId[slide.id]);
+            return (
             <div key={slide.id} className="snap-start">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary-container/90 border border-secondary-container/40 backdrop-blur-md shadow-md mb-4 max-w-full">
                 <span className="w-2 h-2 rounded-full bg-secondary-container shrink-0"></span>
@@ -129,12 +172,14 @@ export default function Hero() {
                 <div className="mb-8" />
               )}
               <div className="flex flex-wrap items-center gap-4">
-                {slide.id === 'fallback' ? (
+                {slide.id === 'fallback' || !action ? (
                   <JubileeRegisterLink variant="hero" />
                 ) : (
-                  <Link href={registrationPath(slide.id)} className={registerClass}>
-                    <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
-                    Register
+                  <Link href={action.href} className={registerClass}>
+                    <span className="material-symbols-outlined text-[18px]">
+                      {action.kind === 'view' ? 'event_available' : 'how_to_reg'}
+                    </span>
+                    {action.label}
                   </Link>
                 )}
                 {slide.instagramUrl ? (
@@ -152,7 +197,8 @@ export default function Hero() {
                 ) : null}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {events.length > 1 ? (

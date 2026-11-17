@@ -18,7 +18,7 @@ export const DAY1_PORTAL_MENU: PortalMenuFlags = {
   show_home_lanes: false,
 };
 
-export type PortalNavLink = { href: string; label: string; emphasize?: boolean };
+export type PortalNavLink = { href: string; label: string };
 
 function asBool(value: unknown, fallback: boolean): boolean {
   if (typeof value === 'boolean') return value;

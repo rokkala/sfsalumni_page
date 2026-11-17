@@ -49,7 +49,7 @@ assert.equal(allOn.show_donate, true);
 
 const links = [
   { href: '/member', label: 'Home' },
-  { href: '/member/donate', label: 'Donate', emphasize: true },
+  { href: '/member/donate', label: 'Donate' },
   { href: '/events', label: 'Events' },
   { href: '/stories', label: 'Stories' },
   { href: '/memories', label: 'Memories' },

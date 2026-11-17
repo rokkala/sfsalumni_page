@@ -5,6 +5,10 @@
 import Link from 'next/link';
 import BackHomeLink from '@/components/back-home-link';
 import { registrationPath } from '@/lib/events/choose-event';
+import {
+    eventActionFromRegistration,
+    type EventRegistrationHint,
+} from '@/lib/events/event-cta';
 import { eventFeeSummary } from '@/lib/events/pricing';
 import type { EventCatalog } from '@/lib/events/types';
 import type { PreRegistrationData } from '@/lib/registration/types';
@@ -34,9 +38,11 @@ export function AdminNoticeScreen() {
 
 export interface ChooseEventScreenProps {
     choices: EventCatalog[];
+    /** Saved registration per event id when the alumni already registered. */
+    registrationsByEventId?: Record<string, EventRegistrationHint | null | undefined>;
 }
 
-export function ChooseEventScreen({ choices }: ChooseEventScreenProps) {
+export function ChooseEventScreen({ choices, registrationsByEventId }: ChooseEventScreenProps) {
     return (
         <div className="min-h-screen bg-surface px-6 pt-28 pb-16">
             <div className="max-w-3xl mx-auto">
@@ -45,29 +51,42 @@ export function ChooseEventScreen({ choices }: ChooseEventScreenProps) {
                     Registration is separate for each event. Pick the one you want to attend.
                 </p>
                 <div className="grid gap-4">
-                    {choices.map((choice) => (
+                    {choices.map((choice) => {
+                        const action = eventActionFromRegistration(
+                            choice.id,
+                            registrationsByEventId?.[choice.id]
+                        );
+                        return (
                         <article
                             key={choice.id}
                             className="rounded-2xl bg-surface-paper border border-primary/10 p-6 shadow-sm"
                         >
-                            <div className="text-label-sm uppercase tracking-widest text-jubilee-gold-deep font-bold">
-                                {new Date(choice.starts_at).toLocaleDateString('en-IN', {
-                                    day: 'numeric',
-                                    month: 'long',
-                                    year: 'numeric',
-                                })}
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="text-label-sm uppercase tracking-widest text-jubilee-gold-deep font-bold">
+                                  {new Date(choice.starts_at).toLocaleDateString('en-IN', {
+                                      day: 'numeric',
+                                      month: 'long',
+                                      year: 'numeric',
+                                  })}
+                              </div>
+                              {action.kind !== 'register' ? (
+                                <p className="rounded-full bg-secondary-container/60 px-3 py-1 text-label-sm font-bold text-on-secondary-fixed">
+                                  {action.kind === 'view' ? 'Registered' : 'In progress'}
+                                </p>
+                              ) : null}
                             </div>
                             <h2 className="text-headline-sm text-primary mt-2">{choice.title}</h2>
                             <p className="text-body-sm text-navy-subtle mt-2">{choice.summary}</p>
                             <p className="text-label-sm text-navy-subtle mt-3">{eventFeeSummary()}</p>
                             <Link
-                                href={registrationPath(choice.id)}
+                                href={action.href}
                                 className="inline-flex mt-5 rounded-lg bg-secondary-container text-on-secondary-container hover:bg-secondary-fixed px-4 py-2.5 text-label-sm font-bold"
                             >
-                                Register
+                                {action.label}
                             </Link>
                         </article>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         </div>

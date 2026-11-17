@@ -5,10 +5,14 @@ import { NextResponse } from 'next/server';
 import { getCurrentAccount } from '@/lib/auth/request';
 import { assertDonationAmountPaise, assertDonationMessage } from '@/lib/donations/validate';
 import { assertOfflineProofFields } from '@/lib/payments/bank-details';
+import { readRegistrationCode, type RegistrationCodeAdmin } from '@/lib/events/registration-code';
+import { PENDING_PROOF_ALREADY_MESSAGE } from '@/lib/payments/offline-proof';
 import {
-  PENDING_PROOF_ALREADY_MESSAGE,
-  bankReferenceFromProof,
-} from '@/lib/payments/offline-proof';
+  assertRemittancePayload,
+  bankReferenceFromRemittance,
+  parseRemittanceMethod,
+} from '@/lib/payments/remittance-validate';
+import { UpiQuotaError, assertUpiQuotaForSubmit } from '@/lib/payments/upi-quota';
 import {
   PAYMENT_PROOFS_BUCKET,
   paymentProofObjectPath,
@@ -38,22 +42,7 @@ export async function POST(request: Request) {
   const paymentAccountId = UUID_RE.test(paymentAccountIdRaw) ? paymentAccountIdRaw : null;
   const file = form.get('screenshot');
   const blob = file instanceof File && file.size > 0 ? file : null;
-
-  let proofFields;
-  try {
-    proofFields = assertOfflineProofFields({
-      utr: form.get('utr'),
-      file: blob
-        ? { name: blob.name, type: blob.type, size: blob.size }
-        : null,
-    });
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : 'Invalid proof' },
-      { status: 400 }
-    );
-  }
-  const utr = proofFields.utr;
+  const remittanceMethod = parseRemittanceMethod(form.get('remittanceMethod'));
 
   const admin = createAdminClient();
   const { data: payAccount } = paymentAccountId
@@ -164,15 +153,74 @@ export async function POST(request: Request) {
     );
   }
 
+  if (!remittanceMethod) {
+    return NextResponse.json({ error: 'Choose how you paid (remittance method).' }, { status: 400 });
+  }
+
+  let parsedRemittance;
+  try {
+    if (remittanceMethod === 'upi') {
+      await assertUpiQuotaForSubmit(admin, amountPaise);
+    }
+    parsedRemittance = assertRemittancePayload({
+      method: remittanceMethod,
+      fields: {
+        paymentDate: form.get('paymentDate'),
+        utr: form.get('utr'),
+        reference: form.get('reference'),
+        challanNumber: form.get('challanNumber'),
+        repName: form.get('repName'),
+        batchYear: form.get('batchYear'),
+        section: form.get('section'),
+        repPhone: form.get('repPhone'),
+        foreignReference: form.get('foreignReference'),
+        amountForeign: form.get('amountForeign'),
+        currency: form.get('currency'),
+        amountInrReported: form.get('amountInrReported'),
+      },
+      file: blob ? { name: blob.name, type: blob.type, size: blob.size } : null,
+      amountPaise,
+    });
+  } catch (e) {
+    if (e instanceof UpiQuotaError) {
+      return NextResponse.json(
+        { error: e.message, upi: e.snapshot },
+        { status: 429 }
+      );
+    }
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'Invalid proof' },
+      { status: 400 }
+    );
+  }
+
+  const utr = parsedRemittance.utr;
+  let proofFileExt: { ext: string; type: string } | null = null;
+  try {
+    const pf = assertOfflineProofFields({
+      utr: remittanceMethod === 'upi' ? utr : '',
+      file: blob
+        ? { name: blob.name, type: blob.type, size: blob.size }
+        : parsedRemittance.file,
+      allowMissingUtr: remittanceMethod !== 'upi',
+    });
+    proofFileExt = pf.file ? { ext: pf.file.ext, type: pf.file.type } : null;
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'Invalid proof file' },
+      { status: 400 }
+    );
+  }
+
   let screenshot_path: string | null = null;
-  if (blob && proofFields.file) {
+  if (blob && proofFileExt) {
     const objectId = randomUUID();
-    screenshot_path = paymentProofObjectPath(me.id, objectId, proofFields.file.ext);
+    screenshot_path = paymentProofObjectPath(me.id, objectId, proofFileExt.ext);
     const buffer = Buffer.from(await blob.arrayBuffer());
     const { error: uploadError } = await admin.storage
       .from(PAYMENT_PROOFS_BUCKET)
       .upload(screenshot_path, buffer, {
-        contentType: proofFields.file.type,
+        contentType: proofFileExt.type,
         upsert: false,
       });
     if (uploadError) {
@@ -195,6 +243,9 @@ export async function POST(request: Request) {
       amount_paise: amountPaise,
       utr,
       screenshot_path,
+      remittance_method: parsedRemittance.method,
+      payment_date: parsedRemittance.payment_date,
+      remittance_meta: parsedRemittance.remittance_meta,
       status: 'pending',
       updated_at: new Date().toISOString(),
     })
@@ -212,10 +263,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Could not submit proof' }, { status: 500 });
   }
 
+  const registrationUpiRef = registrationId
+    ? (await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, registrationId)) ||
+      null
+    : null;
+
   if (registrationId) {
-    const bankReference = bankReferenceFromProof({
+    const bankReference = bankReferenceFromRemittance({
+      method: parsedRemittance.method,
       utr,
+      remittance_meta: parsedRemittance.remittance_meta,
       hasScreenshot: Boolean(screenshot_path),
+      registrationUpiRef,
     });
     const { error: refErr } = await admin
       .from('event_registrations')
@@ -229,7 +288,13 @@ export async function POST(request: Request) {
     ok: true,
     proof,
     bank_reference: registrationId
-      ? bankReferenceFromProof({ utr, hasScreenshot: Boolean(screenshot_path) })
+      ? bankReferenceFromRemittance({
+          method: parsedRemittance.method,
+          utr,
+          remittance_meta: parsedRemittance.remittance_meta,
+          hasScreenshot: Boolean(screenshot_path),
+          registrationUpiRef,
+        })
       : null,
     message: 'Submitted for committee verification. You will be confirmed once reviewed.',
   });

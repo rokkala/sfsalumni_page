@@ -24,6 +24,9 @@ videos/.DS_Store
 # Secrets and local configuration
 .env*
 !.env.example
+APIKey.csv
+*APIKey*.csv
+/local-pay-test/
 .vercel
 *.pem
 *.tsbuildinfo

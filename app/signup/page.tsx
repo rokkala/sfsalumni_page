@@ -404,20 +404,22 @@ function SignupForm() {
 
                         <div className="flex flex-col">
                             <label className="text-label-md text-primary mb-2 uppercase tracking-wider" htmlFor="username">
-                                Username
+                                Custom username (optional)
                             </label>
                             <input
                                 id="username"
                                 type="text"
                                 value={username}
                                 onChange={(e) => setUsername(sanitizeUsernameInput(e.target.value))}
-                                placeholder="Optional"
+                                placeholder="e.g. ada_rao"
                                 autoComplete="username"
                                 disabled={loading}
                                 className={fieldClass}
                             />
                             <p className="text-label-sm text-on-surface-variant mt-1">
-                                Letters, numbers and underscores only. Leave blank to use your email. Your username will be {usernamePreview}.
+                                For a short sign-in handle only—not your email (use the field above). Letters, numbers, and
+                                underscores. Leave blank and you will sign in with your email address. Sign-in ID:{' '}
+                                <span className="text-on-surface">{usernamePreview}</span>.
                             </p>
                         </div>
 

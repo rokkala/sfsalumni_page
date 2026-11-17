@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/admin-shell';
 
@@ -17,10 +19,15 @@ type DonationRow = {
   message: string | null;
   payment_status: string;
   razorpay_payment_id: string | null;
+  razorpay_order_id?: string | null;
   created_at: string;
+  kind?: 'cause' | 'event';
   cause_title: string;
   donor_name: string;
   donor_email: string;
+  channel_label?: string;
+  recon_hint?: string;
+  proof_id?: string | null;
 };
 
 function formatInr(paise: number): string {
@@ -28,9 +35,15 @@ function formatInr(paise: number): string {
 }
 
 export default function AdminDonationsPage() {
+  const searchParams = useSearchParams();
   const [causes, setCauses] = useState<Cause[]>([]);
   const [donations, setDonations] = useState<DonationRow[]>([]);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'pending' | 'failed'>('all');
+  const initialStatus = searchParams.get('status');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'pending' | 'failed'>(
+    initialStatus === 'pending' || initialStatus === 'paid' || initialStatus === 'failed'
+      ? initialStatus
+      : 'all'
+  );
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
@@ -148,7 +161,13 @@ export default function AdminDonationsPage() {
     <AdminShell title="Donations">
       <p className="text-body-sm text-on-surface-variant mb-6 max-w-3xl">
         Set up <strong>donation types</strong> (what members can give to), then track gifts submitted
-        via Bank / UPI proof.
+        via Bank / UPI proof.         Each row shows <strong className="font-semibold text-on-surface">channel</strong> (Cashfree vs
+        Bank / UPI) and what to do next. UTR work happens on{' '}
+        <Link href="/admin/payment-accounts" className="text-primary underline font-medium">
+          Bank / UPI
+        </Link>
+        . Jubilee add-on gifts usually reconcile on a <strong className="font-semibold text-on-surface">
+        Registration</strong> proof, not a separate cause proof.
       </p>
 
       <div className="grid gap-8 lg:grid-cols-[1fr_1.2fr]">
@@ -322,17 +341,52 @@ export default function AdminDonationsPage() {
                     <p className="font-semibold text-primary">
                       {formatInr(d.amount_paise)} · {d.cause_title}
                     </p>
-                    <span className="text-label-sm uppercase tracking-wider text-jubilee-gold-deep">
-                      {d.payment_status}
-                    </span>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      {d.channel_label ? (
+                        <span className="text-label-sm rounded-md bg-surface-container px-2 py-0.5 text-primary">
+                          {d.channel_label}
+                        </span>
+                      ) : null}
+                      <span className="text-label-sm uppercase tracking-wider text-jubilee-gold-deep">
+                        {d.payment_status}
+                      </span>
+                    </div>
                   </div>
                   <p className="text-on-surface-variant mt-1">
                     {d.donor_name} · {d.donor_email}
+                    {d.kind === 'event' ? (
+                      <span className="ml-1 text-label-sm">· jubilee add-on</span>
+                    ) : (
+                      <span className="ml-1 text-label-sm">· cause only</span>
+                    )}
                   </p>
                   {d.message ? <p className="mt-1 text-on-surface">{d.message}</p> : null}
+                  {d.recon_hint ? (
+                    <p className="mt-2 text-body-sm text-on-surface-variant">{d.recon_hint}</p>
+                  ) : null}
+                  {d.proof_id ? (
+                    <p className="mt-2">
+                      <Link
+                        href="/admin/payment-accounts"
+                        className="text-primary text-label-sm font-bold uppercase tracking-wider underline"
+                      >
+                        Review UTR proof on Bank / UPI
+                      </Link>
+                    </p>
+                  ) : d.payment_status === 'pending' && d.kind === 'event' ? (
+                    <p className="mt-2">
+                      <Link
+                        href="/admin/payment-accounts"
+                        className="text-primary text-label-sm font-bold uppercase tracking-wider underline"
+                      >
+                        Review registration proof on Bank / UPI
+                      </Link>
+                    </p>
+                  ) : null}
                   <p className="text-on-surface-variant mt-2 text-label-sm">
                     {new Date(d.created_at).toLocaleString('en-IN')}
                     {d.razorpay_payment_id ? ` · ref ${d.razorpay_payment_id}` : ''}
+                    {d.razorpay_order_id ? ` · order ${d.razorpay_order_id}` : ''}
                   </p>
                 </li>
               ))}

@@ -1,9 +1,8 @@
 // app/api/payments/create-order/route.ts
-// Creates one Razorpay order for everything still due on a registration: the event fee plus
+// Creates one Cashfree order for everything still due on a registration: the event fee plus
 // the linked donation. Both amounts are computed here from the database, never from the browser.
-// The same order id is stored on the registration and on its donation, so verify and the
-// webhook can find both.
 
+import { randomBytes } from 'crypto';
 import { NextResponse } from 'next/server';
 import { getCurrentAccount } from '@/lib/auth/request';
 import { amountDuePaise, OPEN_PAYMENT_STATUSES } from '@/lib/events/balance';
@@ -14,15 +13,23 @@ import {
   loadDonation,
 } from '@/lib/events/mark-paid';
 import {
-  getRazorpayClient,
-  isRazorpayConfigured,
-  razorpayKeyId,
-  razorpayKeysAligned,
-} from '@/lib/payments/razorpay';
+  appBaseUrl,
+  cashfreePublicMode,
+  createCashfreeOrder,
+  isCashfreeConfigured,
+} from '@/lib/payments/cashfree';
+import {
+  loadCheckoutSettings,
+  memberOnlineCheckoutAvailable,
+} from '@/lib/payments/checkout-settings';
 import { createAdminClient } from '@/lib/supabase-admin';
 
-/** Razorpay refuses orders below ₹1. */
+/** Cashfree refuses orders below ₹1. */
 const MIN_ONLINE_PAISE = 100;
+
+function newGatewayOrderId(prefix: string): string {
+  return `${prefix}_${randomBytes(8).toString('hex')}_${Date.now()}`.slice(0, 40);
+}
 
 export async function POST(request: Request) {
   const me = await getCurrentAccount();
@@ -31,21 +38,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Committee accounts do not pay here' }, { status: 400 });
   }
 
-  if (!isRazorpayConfigured()) {
-    return NextResponse.json(
-      {
-        error: 'Payments are not configured yet. Ask the committee to mark your payment, or try again later.',
-        configured: false,
-      },
-      { status: 503 }
-    );
-  }
+  const admin = createAdminClient();
+  const checkoutSettings = await loadCheckoutSettings(admin);
 
-  if (!razorpayKeysAligned()) {
+  if (!memberOnlineCheckoutAvailable(checkoutSettings)) {
     return NextResponse.json(
       {
-        error:
-          'Payment keys mismatch: NEXT_PUBLIC_RAZORPAY_KEY_ID must equal RAZORPAY_KEY_ID (same test or live key).',
+        error: isCashfreeConfigured()
+          ? 'Online checkout is turned off. Pay by Bank / UPI or ask the committee.'
+          : 'Payments are not configured yet. Ask the committee to mark your payment, or try again later.',
         configured: false,
       },
       { status: 503 }
@@ -58,7 +59,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'registrationId is required' }, { status: 400 });
   }
 
-  const admin = createAdminClient();
   const registrationSelect =
     'id,event_id,account_id,payment_status,total_cost_paise,amount_paid_paise,donation_id';
 
@@ -74,7 +74,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Registration not found' }, { status: 404 });
   }
 
-  // Bring the fee up to date with the current rule before charging anything.
   await repriceEventRegistrations(String(reg.event_id || ''));
 
   const { data: priced } = await admin
@@ -92,7 +91,6 @@ export async function POST(request: Request) {
   const donationDue = donationDuePaise(donation);
   const totalDue = feeDue + donationDue;
 
-  // Nothing owed (₹0 fee and no donation): settle now and issue the code if it is eligible.
   if (totalDue === 0) {
     const settled = await applyRegistrationPayment({ registrationId: reg.id, settleFull: true });
     if (!settled.ok) {
@@ -114,35 +112,34 @@ export async function POST(request: Request) {
     );
   }
 
-  const client = getRazorpayClient();
-  if (!client) {
-    return NextResponse.json({ error: 'Payments are not configured', configured: false }, { status: 503 });
-  }
+  const base = appBaseUrl();
+  const gatewayOrderId = newGatewayOrderId(`reg_${reg.id.slice(0, 8)}`);
+  const created = await createCashfreeOrder({
+    orderId: gatewayOrderId,
+    amountPaise: totalDue,
+    customer: {
+      id: me.id,
+      name: me.full_name || 'Alumni',
+      email: me.email || 'alumni@example.com',
+      phone: me.phone_number || '',
+    },
+    returnUrl: `${base}/registration?cf_order_id=${encodeURIComponent(gatewayOrderId)}`,
+    notifyUrl: `${base}/api/payments/webhook`,
+    tags: {
+      registration_id: reg.id,
+      donation_id: donation?.id ?? '',
+      account_id: me.id,
+    },
+    note: 'Golden Jubilee registration',
+  });
 
-  let orderId: string;
-  try {
-    const order = await client.orders.create({
-      amount: totalDue,
-      currency: 'INR',
-      receipt: `reg_${reg.id.slice(0, 8)}_${Date.now()}`.slice(0, 40),
-      notes: {
-        registration_id: reg.id,
-        donation_id: donation?.id ?? '',
-        account_id: me.id,
-      },
-    });
-    orderId = order.id;
-  } catch (err) {
-    console.error('razorpay order', err);
-    const statusCode =
-      err && typeof err === 'object' && 'statusCode' in err
-        ? Number((err as { statusCode?: unknown }).statusCode)
-        : NaN;
-    if (statusCode === 401) {
+  if (!created.ok) {
+    console.error('cashfree create-order', created.message);
+    if (created.status === 401) {
       return NextResponse.json(
         {
           error:
-            'Payment gateway authentication failed. In Razorpay Dashboard (Test Mode) regenerate API keys, then set RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, and NEXT_PUBLIC_RAZORPAY_KEY_ID to the new pair in Vercel and redeploy.',
+            'Payment gateway authentication failed. Check CASHFREE_CLIENT_ID and CASHFREE_CLIENT_SECRET in your environment, then redeploy.',
         },
         { status: 502 }
       );
@@ -150,11 +147,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Could not create payment order' }, { status: 500 });
   }
 
-  // Store the order on the registration, and on the donation when there is one still owed.
   const now = new Date().toISOString();
   const { error: regUpdError } = await admin
     .from('event_registrations')
-    .update({ razorpay_order_id: orderId, updated_at: now })
+    .update({ razorpay_order_id: created.orderId, updated_at: now })
     .eq('id', reg.id);
   if (regUpdError) {
     console.error('create-order persist registration', regUpdError);
@@ -164,7 +160,7 @@ export async function POST(request: Request) {
   if (donation && donationDue > 0) {
     const { error: donUpdError } = await admin
       .from('donations')
-      .update({ razorpay_order_id: orderId, updated_at: now })
+      .update({ razorpay_order_id: created.orderId, updated_at: now })
       .eq('id', donation.id);
     if (donUpdError) {
       console.error('create-order persist donation', donUpdError);
@@ -174,14 +170,12 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    orderId,
+    orderId: created.orderId,
+    paymentSessionId: created.paymentSessionId,
+    checkoutMode: cashfreePublicMode(),
     amount: totalDue,
     fee_due_paise: feeDue,
     donation_due_paise: donationDue,
     currency: 'INR',
-    keyId: razorpayKeyId(),
-    name: me.full_name,
-    email: me.email,
-    contact: me.phone_number,
   });
 }

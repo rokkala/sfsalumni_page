@@ -22,7 +22,12 @@ import {
   loadDonation,
   type DonationSnapshot,
 } from '@/lib/events/mark-paid';
-import { readRegistrationCode, type RegistrationCodeAdmin } from '@/lib/events/registration-code';
+import {
+  isEligibleForRegistrationCode,
+  readRegistrationCode,
+  reserveRegistrationCode,
+  type RegistrationCodeAdmin,
+} from '@/lib/events/registration-code';
 import { assertDonationAmountPaise } from '@/lib/donations/validate';
 import {
   MAX_GUESTS,
@@ -266,12 +271,20 @@ export async function getAccountRegistrationForEvent(
       }
     : null;
 
-  // Reading applies the same paid-in-full code rule as every other path.
-  const registrationCode = await issueRegistrationCodeIfEligible(admin, reg.id, {
+  let registrationCode = await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id);
+  if (!registrationCode) {
+    registrationCode = await reserveRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id);
+  }
+  if (!registrationCode) {
+    registrationCode = await issueRegistrationCodeIfEligible(admin, reg.id, {
+      paymentStatus: reg.payment_status,
+      donationDuePaise: donationDue,
+    });
+  }
+  const passReady = isEligibleForRegistrationCode({
     paymentStatus: reg.payment_status,
     donationDuePaise: donationDue,
   });
-  const passReady = registrationCode !== null;
 
   return {
     status: 200,
@@ -480,11 +493,13 @@ export async function registerAccountForEvent(
   }
   if (!regId) return { status: 500, payload: { error: 'Could not save registration' } };
 
-  // A registration whose fee and donation are both settled gets its code now.
-  const registrationCode = await issueRegistrationCodeIfEligible(admin, regId, {
-    paymentStatus: payment_status,
-    donationDuePaise: donationDue,
-  });
+  let registrationCode = await reserveRegistrationCode(admin as unknown as RegistrationCodeAdmin, regId);
+  if (!registrationCode) {
+    registrationCode = await issueRegistrationCodeIfEligible(admin, regId, {
+      paymentStatus: payment_status,
+      donationDuePaise: donationDue,
+    });
+  }
 
   const fullName = String(body.full_name || '').trim() || me.full_name;
   const lastName = String(body.last_name || '').trim();

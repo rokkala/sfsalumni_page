@@ -21,6 +21,31 @@ const PROOF_MIME: Record<string, string> = {
 const ACCOUNT_NUMBER_RE = /^\d{6,18}$/;
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
+/** NPCI UPI Ref No. on payment receipts (not the app’s shorter Transaction ID). */
+export const UPI_REF_NO_PATTERN = /^\d{12}$/;
+export const UPI_REF_NO_LEN = 12;
+
+/** Strip spaces and non-digits; cap at 12 for inputs and pasted text. */
+export function normalizeUpiRefNoInput(raw: unknown): string {
+  return String(raw ?? '')
+    .replace(/\s+/g, '')
+    .replace(/\D/g, '')
+    .slice(0, UPI_REF_NO_LEN);
+}
+
+export function assertUpiRefNo(raw: unknown): string {
+  const value = normalizeUpiRefNoInput(raw);
+  if (!value) {
+    throw new Error('UPI Ref No. is required');
+  }
+  if (!UPI_REF_NO_PATTERN.test(value)) {
+    throw new Error(
+      'Enter the 12-digit UPI Ref No. from your payment receipt (not the app Transaction ID)'
+    );
+  }
+  return value;
+}
+
 export function normalizeIfsc(raw: unknown): string | null {
   const s = String(raw ?? '')
     .trim()
@@ -36,26 +61,64 @@ export function formatInr(paise: number): string {
   })}`;
 }
 
+/** NPCI UPI `tr` (transaction reference) — alphanumeric, max 35. */
+export const UPI_TRANSACTION_ID_MAX_LEN = 35;
+
+/** NPCI `tr`: letters, digits, dot, hyphen only (no underscore). */
+export function normalizeUpiTransactionId(raw: unknown): string {
+  return String(raw ?? '')
+    .trim()
+    .replace(/-/g, '')
+    .replace(/[^A-Za-z0-9.-]/g, '')
+    .slice(0, UPI_TRANSACTION_ID_MAX_LEN);
+}
+
+/** Same rules as gate entry codes (SFS + 5 glyphs). */
+export function normalizeSfsEntryCode(raw: unknown): string {
+  const compact = String(raw ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  if (!compact) return '';
+  const body = compact.startsWith('SFS') ? compact.slice(3) : compact;
+  return body.length === 5 ? `SFS-${body}` : '';
+}
+
+/** Bank narration is short — show SFS + first 8 hex of the registration UUID (still unique at event scale). */
+export function shortUpiPaymentRef(fullRegistrationRef: string): string {
+  const hex = normalizeUpiTransactionId(fullRegistrationRef).toLowerCase();
+  if (!hex) return '';
+  return `SFS${hex.slice(0, 8)}`;
+}
+
+function upiQueryValue(raw: string): string {
+  return encodeURIComponent(raw).replace(/%20/g, '+');
+}
+
 /** Pure helper — no framework deps */
 export function buildUpiPayUri(opts: {
   upiId: string;
   amountPaise: number;
   payeeName?: string;
   note?: string;
+  /** Embedded in the QR as UPI `tr` so payers and the bank share a custom reference. */
+  transactionId?: string;
 }): string | null {
   const pa = String(opts.upiId || '').trim();
   const amountPaise = Math.floor(Number(opts.amountPaise) || 0);
   if (!pa || amountPaise <= 0) return null;
   const am = (amountPaise / 100).toFixed(2);
-  const params = new URLSearchParams();
-  params.set('pa', pa);
-  const pn = String(opts.payeeName || '').trim();
-  if (pn) params.set('pn', pn);
-  params.set('am', am);
-  params.set('cu', 'INR');
-  const tn = String(opts.note || '').trim();
-  if (tn) params.set('tn', tn);
-  return `upi://pay?${params.toString()}`;
+  const note = String(opts.note || '').trim();
+  const regCode = normalizeSfsEntryCode(opts.transactionId);
+  const tr = regCode || normalizeUpiTransactionId(opts.transactionId);
+  // Unpaid registrations: short ref for bank recon; SFS-XXXXX only exists after payment settles.
+  const tn = regCode || (tr ? shortUpiPaymentRef(tr) : note);
+  const pn = regCode || String(opts.payeeName || '').trim();
+  const parts = [`pa=${pa}`];
+  if (pn) parts.push(`pn=${upiQueryValue(pn)}`);
+  if (tr) parts.push(`tr=${tr}`);
+  if (tn) parts.push(`tn=${upiQueryValue(tn)}`);
+  parts.push(`am=${am}`, 'cu=INR');
+  return `upi://pay?${parts.join('&')}`;
 }
 
 export type BankAccountInput = {
@@ -111,17 +174,26 @@ export type OfflineProofOk = {
   file: { ext: string; type: string; size: number; name?: string } | null;
 };
 
-/** Throws Error with a member-facing message when invalid. UTR required; screenshot optional. */
+/** Throws Error with a member-facing message when invalid. Screenshot optional. */
 export function assertOfflineProofFields(input: {
   utr: unknown;
   file: OfflineProofFile | null | undefined;
+  /** Registration payments carry ref in the UPI note; UTR may be omitted. */
+  allowMissingUtr?: boolean;
 }): OfflineProofOk {
-  const utr = String(input.utr ?? '').trim();
-  const file = input.file ?? null;
-
-  if (!utr) {
-    throw new Error('UTR / reference is required');
+  const utrRaw = normalizeUpiRefNoInput(input.utr);
+  let utr = '';
+  if (utrRaw) {
+    if (!UPI_REF_NO_PATTERN.test(utrRaw)) {
+      throw new Error(
+        'Enter the 12-digit UPI Ref No. from your payment receipt (not the app Transaction ID)'
+      );
+    }
+    utr = utrRaw;
+  } else if (!input.allowMissingUtr) {
+    throw new Error('UPI Ref No. is required');
   }
+  const file = input.file ?? null;
 
   if (file) {
     if (file.size > OFFLINE_PROOF_MAX_BYTES) {

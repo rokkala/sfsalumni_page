@@ -4,14 +4,13 @@
 // go through here so the rules cannot drift apart.
 //
 // Rules:
-// - A Razorpay payment is applied to the fee first, then to the linked donation.
+// - An online gateway payment (Cashfree) is applied to the fee first, then to the linked donation.
 // - A registration code is issued when the fee and the donation are both settled.
-// - Mark unpaid clears payment and nullifies the registration code.
-// - Applying the same Razorpay payment id twice changes nothing.
+// - Mark unpaid clears payment; SFS code is kept for UPI / bank narration matching.
+// - Applying the same gateway payment id twice changes nothing.
 
 import { amountDuePaise, jubileeStatusFromPayment, statusFromAmounts } from '@/lib/events/balance';
 import {
-  clearRegistrationCode,
   ensureRegistrationCode,
   isEligibleForRegistrationCode,
   readRegistrationCode,
@@ -63,7 +62,7 @@ export type SettleFailure = {
 export type SettleResult = SettleSuccess | SettleFailure;
 
 export type UnpaidResult =
-  | { ok: true; payment_status: 'pending'; amount_paid_paise: 0; registration_code: null }
+  | { ok: true; payment_status: 'pending'; amount_paid_paise: 0; registration_code: string | null }
   | SettleFailure;
 
 /** Donation still owed on the registration's donation row. Failed or paid rows owe nothing. */
@@ -100,7 +99,7 @@ export async function loadDonation(
   return data as unknown as DonationSnapshot;
 }
 
-/** Issues the registration code when fee + donation are fully settled. Returns the code, or null. */
+/** Issues the SFS entry passcode when fee + donation are fully settled (payment done). */
 export async function issueRegistrationCodeIfEligible(
   admin: AdminClient,
   registrationId: string,
@@ -147,7 +146,7 @@ async function currentState(admin: AdminClient, registration: RegistrationSnapsh
 }
 
 /**
- * Applies money to the fee first, then to the donation. Writes the Razorpay ids when given.
+ * Applies money to the fee first, then to the donation. Writes gateway ids (legacy razorpay_* columns).
  * Callers have already checked the payment id and the order id.
  */
 async function settle(
@@ -169,7 +168,7 @@ async function settle(
   const donationPortion = Math.min(remainder, donationDue);
   const unapplied = remainder - donationPortion;
   if (unapplied > 0) {
-    // Money beyond what is owed. Logged so the committee can reconcile it with Razorpay.
+    // Money beyond what is owed. Logged so the committee can reconcile with the gateway.
     console.error('mark-paid: payment exceeds amount due', {
       registrationId: registration.id,
       unapplied,
@@ -238,11 +237,10 @@ async function settle(
 }
 
 /**
- * Applies a Razorpay payment that the caller has already verified (signature checked, or the
- * webhook has fetched the captured amount from Razorpay). The amount must come from Razorpay,
- * never from the browser. Idempotent on the Razorpay payment id.
+ * Applies a Cashfree payment that the caller confirmed with the PG API. The amount must come
+ * from Cashfree, never from the browser. Idempotent on the gateway payment id.
  */
-export async function applyRazorpayPayment(input: {
+export async function applyGatewayPayment(input: {
   registrationId: string;
   orderId: string;
   paymentId: string;
@@ -270,7 +268,7 @@ export async function applyRazorpayPayment(input: {
 }
 
 /**
- * Settles everything still due (fee and donation) without a Razorpay payment. Used by the
+ * Settles everything still due (fee and donation) without an online payment. Used by the
  * admin toggle and by a registration whose total is ₹0.
  */
 export async function applyRegistrationPayment(input: {
@@ -325,6 +323,9 @@ export async function markRegistrationUnpaid(registrationId: string): Promise<Un
   }
 
   await syncJubileeStatus(admin, registration, 'pending');
-  await clearRegistrationCode(admin as unknown as RegistrationCodeAdmin, registration.id);
-  return { ok: true, payment_status: 'pending', amount_paid_paise: 0, registration_code: null };
+  const registration_code = await readRegistrationCode(
+    admin as unknown as RegistrationCodeAdmin,
+    registration.id
+  );
+  return { ok: true, payment_status: 'pending', amount_paid_paise: 0, registration_code };
 }

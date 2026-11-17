@@ -2,7 +2,7 @@
 // The details form. Holds no save or payment logic: values and handlers come from the page.
 // Name, email and phone come from the alumni account and are shown read-only, not typed here.
 // Amounts shown are `displayMoney` (saved, or a live preview while edited).
-// Payment is Bank / UPI only (offline proof).
+// Payment: Cashfree online checkout and/or Bank / UPI proof.
 // Parking: total vehicles (2-wheelers + 4-wheelers) cannot exceed guests + 1 (the alumnus).
 
 import { useState, type Dispatch, type FormEvent, type SetStateAction, type KeyboardEvent } from 'react';
@@ -68,11 +68,17 @@ export interface RegistrationFormProps {
     /** True while a Bank / UPI proof awaits committee review — locks guest/food/donation edits. */
     verificationPending: boolean;
     bankAccount: BankAccountPublic | null;
-    onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
+    onPrepareOfflinePay: () => Promise<
+        { registrationId: string; registrationCode: string } | { error: string }
+    >;
     /** Bank / UPI reference last submitted for verification. */
     savedBankReference: string;
     pendingProof: { utr: string | null; hasScreenshot: boolean } | null;
     onOfflineSubmitted: (message: string) => void;
+    /** When the committee enabled online checkout in admin (and Cashfree keys exist). */
+    onlineCheckoutEnabled?: boolean;
+    onPayOnline?: () => void | Promise<void>;
+    payingOnline?: boolean;
     saveMessage: string;
     error: string;
     onSubmit: (event: FormEvent) => void;
@@ -194,6 +200,9 @@ export function RegistrationForm(props: RegistrationFormProps) {
         savedBankReference,
         pendingProof,
         onOfflineSubmitted,
+        onlineCheckoutEnabled = false,
+        onPayOnline,
+        payingOnline = false,
         saveMessage,
         error,
         onSubmit,
@@ -204,6 +213,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
     const choicesLocked = busy || verificationPending;
     const [payOpen, setPayOpen] = useState(false);
     const [payRegistrationId, setPayRegistrationId] = useState('');
+    const [payRegistrationCode, setPayRegistrationCode] = useState('');
     const [payPreparing, setPayPreparing] = useState(false);
     const [payError, setPayError] = useState('');
 
@@ -215,6 +225,15 @@ export function RegistrationForm(props: RegistrationFormProps) {
         !busy &&
         !payPreparing &&
         (Boolean(pendingProof) || amountDuePaise > 0);
+
+    const canPayOnline =
+        onlineCheckoutEnabled &&
+        hasSavedReg &&
+        !formDirty &&
+        !busy &&
+        !payingOnline &&
+        !verificationPending &&
+        amountDuePaise > 0;
 
     async function openPayModal() {
         if (!canOpenPay) return;
@@ -231,6 +250,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
             return;
         }
         setPayRegistrationId(result.registrationId);
+        setPayRegistrationCode(result.registrationCode);
         setPayOpen(true);
     }
 
@@ -625,6 +645,16 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         ? 'Save changes'
                                         : 'Save registration'}
                             </button>
+                            {canPayOnline && onPayOnline ? (
+                                <button
+                                    type="button"
+                                    onClick={() => void onPayOnline()}
+                                    disabled={!canPayOnline}
+                                    className="flex-1 py-3 rounded-lg bg-jubilee-gold-deep text-on-primary text-label-md uppercase tracking-wider font-bold hover:opacity-90 disabled:opacity-50 transition-all focus:outline-none focus:ring-2 focus:ring-jubilee-gold-deep/40"
+                                >
+                                    {payingOnline ? 'Opening checkout…' : 'Pay online'}
+                                </button>
+                            ) : null}
                             {(amountDuePaise > 0 || pendingProof) && (
                                 <button
                                     type="button"
@@ -635,11 +665,16 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                     {payPreparing
                                         ? 'Preparing…'
                                         : pendingProof
-                                          ? 'View Bank / UPI proof'
-                                          : 'Bank / UPI transfer'}
+                                          ? 'View payment proof'
+                                          : 'Submit payment proof'}
                                 </button>
                             )}
                         </div>
+                        {onlineCheckoutEnabled && formDirty && amountDuePaise > 0 ? (
+                            <p className="text-body-sm text-on-surface-variant">
+                                Save changes before paying online.
+                            </p>
+                        ) : null}
                         {!bankAccount && (amountDuePaise > 0 || pendingProof) ? (
                             <p className="text-body-sm text-on-surface-variant">
                                 Bank details are not available yet. Contact the committee.
@@ -664,6 +699,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             account={bankAccount}
                             amountPaise={amountDuePaise}
                             note="Golden Jubilee registration"
+                            transactionId={payRegistrationCode}
                             source={{ type: 'registration', registrationId: payRegistrationId }}
                             existingProof={
                                 pendingProof

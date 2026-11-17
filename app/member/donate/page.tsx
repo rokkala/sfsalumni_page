@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import MemberGate from '@/components/member-gate';
 import AmountWithFx from '@/components/amount-with-fx';
 import OfflinePayModal from '@/components/offline-pay-modal';
+import { openCashfreeCheckout } from '@/lib/payments/checkout-client';
 import PortalShell from '@/components/portal-shell';
 import {
   DONATION_AMOUNT_CHIPS_PAISE,
@@ -23,6 +25,7 @@ function formatInrFromPaise(paise: number): string {
 }
 
 export default function MemberDonatePage() {
+  const searchParams = useSearchParams();
   const [causes, setCauses] = useState<Cause[] | null>(null);
   const [causeId, setCauseId] = useState('');
   const [chipPaise, setChipPaise] = useState<number | null>(DONATION_AMOUNT_CHIPS_PAISE[1]);
@@ -32,6 +35,8 @@ export default function MemberDonatePage() {
   const [error, setError] = useState('');
   const [bankAccount, setBankAccount] = useState<BankAccountPublic | null>(null);
   const [offlineOpen, setOfflineOpen] = useState(false);
+  const [payingOnline, setPayingOnline] = useState(false);
+  const [onlineCheckoutEnabled, setOnlineCheckoutEnabled] = useState(false);
   const [offlineNote, setOfflineNote] = useState('');
   const [success, setSuccess] = useState<{
     amount_paise: number;
@@ -62,6 +67,11 @@ export default function MemberDonatePage() {
         } else {
           setBankAccount(null);
         }
+        if (bankRes.ok) {
+          setOnlineCheckoutEnabled(Boolean(bankPayload.online_checkout_available));
+        } else {
+          setOnlineCheckoutEnabled(false);
+        }
       } catch {
         if (active) {
           setCauses([]);
@@ -76,6 +86,58 @@ export default function MemberDonatePage() {
 
   const selectedCause = causes?.find((c) => c.id === causeId) || null;
 
+  const completeDonationVerify = useCallback(
+    async (
+      orderId: string,
+      opts?: { donationId?: string; amountPaise?: number; causeTitle?: string }
+    ) => {
+      const verifyRes = await fetch('/api/donations/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...(opts?.donationId ? { donationId: opts.donationId } : {}),
+          order_id: orderId,
+        }),
+      });
+      const verified = await verifyRes.json().catch(() => ({}));
+      if (!verifyRes.ok) {
+        setError(
+          verified.error ||
+            'Payment could not be confirmed yet. If money was debited, contact the committee.'
+        );
+        return false;
+      }
+      setSuccess({
+        amount_paise: Number(verified.amount_paise) || opts?.amountPaise || 100,
+        causeTitle: opts?.causeTitle || selectedCause?.title || 'Donation',
+      });
+      setError('');
+      return true;
+    },
+    [selectedCause?.title]
+  );
+
+  useEffect(() => {
+    const orderId = searchParams.get('cf_order_id')?.trim();
+    if (!orderId) return;
+    let active = true;
+    setPayingOnline(true);
+    setError('');
+    void (async () => {
+      const ok = await completeDonationVerify(orderId);
+      if (!active) return;
+      setPayingOnline(false);
+      if (ok && typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('cf_order_id');
+        window.history.replaceState({}, '', url.pathname + url.search);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [searchParams, completeDonationVerify]);
+
   function amountPaise(): number | null {
     if (useCustom) {
       const n = Math.round(Number(customRupees) * 100);
@@ -83,6 +145,60 @@ export default function MemberDonatePage() {
       return n;
     }
     return chipPaise;
+  }
+
+  async function payOnline(e?: FormEvent) {
+    e?.preventDefault();
+    setError('');
+    setSuccess(null);
+    setOfflineNote('');
+    if (!causeId) {
+      setError('Choose a cause');
+      return;
+    }
+    const paise = amountPaise();
+    if (paise == null) {
+      setError('Enter at least ₹1');
+      return;
+    }
+    setPayingOnline(true);
+    try {
+      const res = await fetch('/api/donations/create-order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          causeId,
+          amountPaise: paise,
+          message: message.trim() || undefined,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(payload.error || 'Could not start payment');
+        return;
+      }
+      const checkout = await openCashfreeCheckout({
+        orderId: String(payload.orderId),
+        paymentSessionId: String(payload.paymentSessionId),
+        mode: payload.checkoutMode === 'production' ? 'production' : 'sandbox',
+        description: payload.description,
+      });
+      if (!checkout) return;
+      if ('failed' in checkout) {
+        setError(checkout.message);
+        return;
+      }
+      const ok = await completeDonationVerify(checkout.order_id, {
+        donationId: payload.donationId,
+        amountPaise: paise,
+        causeTitle: selectedCause?.title,
+      });
+      if (!ok) return;
+    } catch {
+      setError('Online payment failed. Please try again.');
+    } finally {
+      setPayingOnline(false);
+    }
   }
 
   function openBankPay(e?: FormEvent) {
@@ -119,7 +235,7 @@ export default function MemberDonatePage() {
               <span className="text-primary font-semibold">{success.causeTitle}</span>.
             </p>
             <p className="text-body-sm text-on-surface-variant mt-2">
-              Proof submitted. The committee will confirm once the remittance is verified.
+              Thank you for your support.
             </p>
             <div className="flex flex-wrap gap-3 mt-6">
               <button
@@ -264,18 +380,30 @@ export default function MemberDonatePage() {
             ) : null}
 
             <div className="flex flex-col gap-2">
+              {onlineCheckoutEnabled ? (
+                <button
+                  type="button"
+                  onClick={() => void payOnline()}
+                  disabled={!causes?.length || amountPaise() == null || payingOnline}
+                  className="w-full rounded-lg bg-jubilee-gold-deep text-on-primary px-4 py-3 text-label-sm font-bold uppercase tracking-wider disabled:opacity-50"
+                >
+                  {payingOnline ? 'Opening checkout…' : 'Pay online'}
+                </button>
+              ) : null}
               <button
                 type="submit"
                 disabled={!causes?.length || amountPaise() == null || !bankAccount}
                 className="w-full rounded-lg bg-primary text-on-primary px-4 py-3 text-label-sm font-bold uppercase tracking-wider disabled:opacity-50"
               >
-                Bank / UPI transfer
+                Submit payment proof
               </button>
             </div>
             <p className="text-body-sm text-on-surface-variant text-center">
-              {bankAccount
-                ? 'Transfer via NEFT or UPI, then upload your proof. The committee verifies payment.'
-                : 'Bank details are not available yet. Contact the committee.'}
+              {onlineCheckoutEnabled
+                ? 'Pay online with UPI or card, or transfer via NEFT/UPI and upload proof.'
+                : bankAccount
+                  ? 'Transfer via NEFT or UPI, then upload your proof. The committee verifies payment.'
+                  : 'Bank details are not available yet. Contact the committee.'}
             </p>
             {offlineNote ? (
               <p className="rounded-lg bg-secondary-container text-on-secondary-fixed text-body-sm p-3">
@@ -291,6 +419,7 @@ export default function MemberDonatePage() {
             account={bankAccount}
             amountPaise={amountPaise()!}
             note={selectedCause?.title || 'Donation'}
+            transactionId={causeId ? `DON-${causeId.replace(/-/g, '').slice(0, 24)}` : undefined}
             source={{ type: 'donation', causeId, message }}
             onSubmitted={(msg) => {
               setOfflineNote(msg);

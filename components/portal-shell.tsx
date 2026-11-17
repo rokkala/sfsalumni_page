@@ -13,7 +13,7 @@ import {
 
 const baseLinks: PortalNavLink[] = [
   { href: '/member', label: 'Home' },
-  { href: '/member/donate', label: 'Donate', emphasize: true },
+  { href: '/member/donate', label: 'Donate' },
   { href: '/events', label: 'Events' },
   { href: '/stories', label: 'Stories' },
   { href: '/memories', label: 'Memories' },
@@ -88,19 +88,8 @@ export default function PortalShell({
                 Golden Jubilee
               </p>
               <nav aria-label="Alumni portal" className="flex flex-col gap-1">
-                {links.map(({ href, label, emphasize }) => {
+                {links.map(({ href, label }) => {
                   const active = linkActive(path, href);
-                  if (emphasize && !active) {
-                    return (
-                      <Link
-                        key={href}
-                        href={href}
-                        className="donate-flash-nav rounded-lg px-2.5 sm:px-3 py-2.5 sm:py-3 text-[14px] sm:text-base leading-snug border border-transparent cursor-pointer"
-                      >
-                        {label}
-                      </Link>
-                    );
-                  }
                   return (
                     <Link
                       key={href}

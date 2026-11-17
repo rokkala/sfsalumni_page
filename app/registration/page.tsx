@@ -21,6 +21,7 @@ import {
 } from '@/lib/registration/registration';
 import { formatLocation, isValidBatch, isValidSection, parseLocation } from '@/lib/registration/registration-fields';
 import { chooseRegistrationEvent } from '@/lib/events/choose-event';
+import type { EventRegistrationHint } from '@/lib/events/event-cta';
 import { eventIsOpen } from '@/lib/events/open';
 import type { EventCatalog } from '@/lib/events/types';
 import {
@@ -44,7 +45,13 @@ import {
 import { RegistrationSuccess } from '@/components/registration_page/registration-success';
 import { previewMoney } from '@/lib/registration/preview';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
+import { openCashfreeCheckout } from '@/lib/payments/checkout-client';
 import { pendingProofDisplay } from '@/lib/payments/offline-proof';
+import {
+    toCheckoutOrder,
+    type OrderApiResponse,
+    type VerifyResponse,
+} from '@/lib/registration/payment-types';
 import {
     choicesFingerprint,
     donationFormFromPaise,
@@ -71,6 +78,7 @@ interface LoadedRegistration {
     committeeConfirmed: boolean;
     bankReference: string;
     pendingProof: PendingProofState | null;
+    registrationCode: string | null;
 }
 
 function formFromPrefill(prefill: RegistrationPrefill): FormData {
@@ -172,6 +180,7 @@ function RegistrationPageInner() {
     const [money, setMoney] = useState<RegistrationMoney>(EMPTY_MONEY);
     const [committeeConfirmed, setCommitteeConfirmed] = useState(false);
     const [registrationId, setRegistrationId] = useState<string | null>(null);
+    const [registrationCode, setRegistrationCode] = useState<string | null>(null);
     /** Bank / UPI reference as last submitted for verification. */
     const [savedBankReference, setSavedBankReference] = useState('');
     const [pendingProof, setPendingProof] = useState<PendingProofState | null>(null);
@@ -182,6 +191,9 @@ function RegistrationPageInner() {
     const [saveMessage, setSaveMessage] = useState('');
     const [event, setEvent] = useState<EventCatalog | null>(null);
     const [choices, setChoices] = useState<EventCatalog[]>([]);
+    const [choiceRegs, setChoiceRegs] = useState<
+        Record<string, EventRegistrationHint | null>
+    >({});
     const [eventLoaded, setEventLoaded] = useState(false);
     const [eventError, setEventError] = useState('');
     const [hasSavedReg, setHasSavedReg] = useState(false);
@@ -222,6 +234,27 @@ function RegistrationPageInner() {
                     return;
                 }
                 if (!chosen) {
+                    // Several events: load which ones this alumni already registered for.
+                    const regs: Record<string, EventRegistrationHint | null> = {};
+                    for (const row of list) {
+                        try {
+                            const regRes = await fetch(
+                                `/api/registration/event?eventId=${encodeURIComponent(row.id)}`,
+                                { cache: 'no-store' }
+                            );
+                            if (regRes.ok) {
+                                const body = (await regRes.json()) as {
+                                    registration?: EventRegistrationHint | null;
+                                };
+                                regs[row.id] = body.registration ?? null;
+                            } else {
+                                regs[row.id] = null;
+                            }
+                        } catch {
+                            regs[row.id] = null;
+                        }
+                    }
+                    setChoiceRegs(regs);
                     setEvent(null);
                     setEventError('');
                     return;
@@ -385,6 +418,7 @@ function RegistrationPageInner() {
         if (!reg) {
             setHasSavedReg(false);
             setRegistrationId(null);
+            setRegistrationCode(null);
             setMoney(EMPTY_MONEY);
             setCommitteeConfirmed(false);
             setSavedBankReference('');
@@ -408,6 +442,11 @@ function RegistrationPageInner() {
                   }
                 : null;
         setRegistrationId(id || null);
+        const code =
+            typeof reg.registration_code === 'string' && reg.registration_code.trim()
+                ? reg.registration_code.trim()
+                : null;
+        setRegistrationCode(code);
         setMoney(next);
         setCommitteeConfirmed(confirmed);
         setSavedBankReference(
@@ -444,6 +483,7 @@ function RegistrationPageInner() {
             committeeConfirmed: confirmed,
             bankReference,
             pendingProof: settled ? null : nextPending,
+            registrationCode: code,
         };
     }
 
@@ -467,6 +507,7 @@ function RegistrationPageInner() {
     useEffect(() => {
         if (!user?.id || gate !== 'ok') {
             setBankAccount(null);
+            setOnlineCheckoutEnabled(false);
             return;
         }
         let cancel = false;
@@ -475,9 +516,11 @@ function RegistrationPageInner() {
                 const res = await fetch('/api/payments/bank-details', { cache: 'no-store' });
                 const payload = (await res.json().catch(() => ({}))) as {
                     account?: BankAccountPublic;
+                    online_checkout_available?: boolean;
                 };
                 if (cancel) return;
                 setBankAccount(res.ok && payload.account ? payload.account : null);
+                setOnlineCheckoutEnabled(Boolean(payload.online_checkout_available));
             } catch {
                 if (!cancel) setBankAccount(null);
             }
@@ -634,19 +677,109 @@ function RegistrationPageInner() {
     }
 
     /** Saves the form if needed, then returns the registration id for the offline pay modal. */
-    async function prepareOfflinePay(): Promise<{ registrationId: string } | { error: string }> {
+    async function prepareOfflinePay(): Promise<
+        { registrationId: string; registrationCode: string } | { error: string }
+    > {
         let regId = registrationId;
+        let code = registrationCode?.trim() || '';
         if (pendingProof) {
             if (!regId) return { error: 'Could not find your registration. Please try again.' };
-            return { registrationId: regId };
+            if (!code) return { error: 'Could not load your SFS payment id. Refresh and try again.' };
+            return { registrationId: regId, registrationCode: code };
         }
         if (formDirty || !regId) {
             const loaded = await saveRegistration();
             if (!loaded) return { error: 'Fix the errors on the form, then try again.' };
             regId = loaded.id;
+            code = loaded.registrationCode?.trim() || '';
         }
         if (!regId) return { error: 'Could not find your registration. Please try again.' };
-        return { registrationId: regId };
+        if (!code) {
+            const reloaded = await loadSavedRegistration(event!.id, false);
+            code = reloaded?.registrationCode?.trim() || '';
+        }
+        if (!code) {
+            return { error: 'Could not load your SFS payment id. Save registration and try again.' };
+        }
+        return { registrationId: regId, registrationCode: code };
+    }
+
+    async function payRegistrationOnline() {
+        const prep = await prepareOfflinePay();
+        if ('error' in prep) {
+            setError(prep.error);
+            return;
+        }
+        setPayingOnline(true);
+        setError('');
+        setSaveMessage('');
+        try {
+            const res = await fetch('/api/payments/create-order', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ registrationId: prep.registrationId }),
+            });
+            const payload = (await res.json().catch(() => ({}))) as OrderApiResponse;
+            if (!res.ok) {
+                setError(payload.error || 'Could not start payment');
+                return;
+            }
+            if (payload.skipCheckout) {
+                setSaveMessage(
+                    payload.registration_code
+                        ? `Settled. Your registration code is ${payload.registration_code}.`
+                        : 'Saved. Nothing is due.'
+                );
+                if (event?.id) await loadSavedRegistration(event.id, false);
+                return;
+            }
+            const order = toCheckoutOrder(payload, {
+                name: accountContact?.full_name || '',
+                email: accountContact?.email || '',
+                contact: accountContact?.phone_number || '',
+            });
+            if (!order) {
+                setError('Incomplete payment response from server');
+                return;
+            }
+            const checkout = await openCashfreeCheckout({
+                orderId: order.orderId,
+                paymentSessionId: order.paymentSessionId,
+                mode: order.mode,
+                description: order.description,
+            });
+            if (!checkout) return;
+            if ('failed' in checkout) {
+                setError(checkout.message);
+                return;
+            }
+            const verifyRes = await fetch('/api/payments/verify', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                    registrationId: prep.registrationId,
+                    order_id: checkout.order_id,
+                }),
+            });
+            const verified = (await verifyRes.json().catch(() => ({}))) as VerifyResponse;
+            if (!verifyRes.ok) {
+                setError(
+                    verified.error ||
+                        'Payment could not be confirmed yet. If money was debited, contact the committee.'
+                );
+                return;
+            }
+            setSaveMessage(
+                verified.registration_code
+                    ? `Payment received. Your registration code is ${verified.registration_code}.`
+                    : 'Payment received.'
+            );
+            if (event?.id) await loadSavedRegistration(event.id, false);
+        } catch {
+            setError('Online payment failed. Please try again.');
+        } finally {
+            setPayingOnline(false);
+        }
     }
 
     async function handleOfflineSubmitted(message: string) {
@@ -677,7 +810,9 @@ function RegistrationPageInner() {
         committeeConfirmed || (money.paymentStatus === 'paid' && money.totalDuePaise === 0);
     // Do not show “awaiting verification” once the registration is confirmed / paid.
     const verificationPending = Boolean(pendingProof) && !isSettled;
-    const busy = saving;
+    const [payingOnline, setPayingOnline] = useState(false);
+    const [onlineCheckoutEnabled, setOnlineCheckoutEnabled] = useState(false);
+    const busy = saving || payingOnline;
     const formMode: RegistrationFormMode = hasSavedReg
         ? money.totalDuePaise > 0
             ? 'pay'
@@ -699,7 +834,9 @@ function RegistrationPageInner() {
 
     if (gate === 'admin') return <AdminNoticeScreen />;
 
-    if (!event && choices.length > 1) return <ChooseEventScreen choices={choices} />;
+    if (!event && choices.length > 1) {
+        return <ChooseEventScreen choices={choices} registrationsByEventId={choiceRegs} />;
+    }
 
     if (eventError && !event) return <EventUnavailableScreen message={eventError} />;
 
@@ -755,6 +892,9 @@ function RegistrationPageInner() {
                     onOfflineSubmitted={(message) => {
                         void handleOfflineSubmitted(message);
                     }}
+                    onlineCheckoutEnabled={onlineCheckoutEnabled}
+                    onPayOnline={() => void payRegistrationOnline()}
+                    payingOnline={payingOnline}
                     saveMessage={saveMessage}
                     error={error}
                     onSubmit={(e) => {

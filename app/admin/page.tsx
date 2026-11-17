@@ -5,6 +5,16 @@ import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/admin-shell';
 import ReconciledRegsModal from '@/components/admin-tools/reconciled-regs-modal';
 
+type GiftBucket = { count: number; paid_paise: number; pending_paise: number };
+
+type ReconciliationSnapshot = {
+  pending_utr_proofs: number;
+  pending_gifts_without_proof: number;
+  pending_cause_gifts_queued: number;
+  unpaid_registrations: number;
+  action_total: number;
+};
+
 type Overview = {
   pendingMembers: number;
   publishedEvents: number;
@@ -15,6 +25,11 @@ type Overview = {
   amountPaidPaise?: number;
   amountDuePaise?: number;
   registrationCount?: number;
+  gifts?: { cause_gifts: GiftBucket; event_gifts: GiftBucket };
+  giftsPaidPaise?: number;
+  giftsPendingPaise?: number;
+  totalReceivedPaise?: number;
+  reconciliation?: ReconciliationSnapshot;
   catalogReady?: boolean;
 };
 
@@ -48,6 +63,14 @@ export default function AdminOverviewPage() {
     data?.amountDuePaise != null
       ? `₹${(data.amountDuePaise / 100).toLocaleString('en-IN')}`
       : '—';
+  const giftsPaid =
+    data?.giftsPaidPaise != null
+      ? `₹${(data.giftsPaidPaise / 100).toLocaleString('en-IN')}`
+      : '—';
+  const totalReceived =
+    data?.totalReceivedPaise != null
+      ? `₹${(data.totalReceivedPaise / 100).toLocaleString('en-IN')}`
+      : moneyPaid;
 
   const cards = [
     {
@@ -67,12 +90,23 @@ export default function AdminOverviewPage() {
       tone: 'navy' as const,
     },
     {
-      label: 'Payments reconciled',
-      value: moneyPaid,
-      hint: `Still due ${moneyDue} · open the list`,
+      label: 'Total received',
+      value: totalReceived,
+      hint: `Regs ${moneyPaid} · gifts ${giftsPaid} · due ${moneyDue}`,
       icon: 'payments',
       tone: 'amber' as const,
       onClick: () => setReconciledOpen(true),
+    },
+    {
+      href: '/admin/donations',
+      label: 'Gifts received',
+      value: giftsPaid,
+      hint:
+        data?.gifts != null
+          ? `Cause ${data.gifts.cause_gifts.count} · event add-on ${data.gifts.event_gifts.count} paid`
+          : 'Cause + event add-on gifts',
+      icon: 'volunteer_activism',
+      tone: 'gold' as const,
     },
     {
       href: '/admin/registrations',
@@ -122,6 +156,56 @@ export default function AdminOverviewPage() {
           {error}
         </p>
       )}
+
+      {data?.reconciliation && data.reconciliation.action_total > 0 ? (
+        <section className="rounded-2xl border border-primary/15 bg-surface-paper p-5 mb-6 shadow-sm">
+          <h2 className="text-headline-sm text-primary">Reconciliation queue</h2>
+          <p className="text-body-sm text-on-surface-variant mt-1 mb-4">
+            Work through these in order: bank proofs → gifts without proof → unpaid registrations.
+          </p>
+          <ul className="grid gap-3 sm:grid-cols-3">
+            <li>
+              <Link
+                href="/admin/payment-accounts"
+                className="block rounded-xl border border-outline-variant bg-white p-4 hover:border-primary/30"
+              >
+                <p className="text-display-sm text-primary tabular-nums">
+                  {data.reconciliation.pending_utr_proofs}
+                </p>
+                <p className="text-label-md text-primary font-bold mt-1">UTR proofs to review</p>
+                <p className="text-body-sm text-on-surface-variant mt-1">
+                  Registration + cause gifts ({data.reconciliation.pending_cause_gifts_queued} cause-only)
+                </p>
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/admin/donations?status=pending"
+                className="block rounded-xl border border-outline-variant bg-white p-4 hover:border-primary/30"
+              >
+                <p className="text-display-sm text-primary tabular-nums">
+                  {data.reconciliation.pending_gifts_without_proof}
+                </p>
+                <p className="text-label-md text-primary font-bold mt-1">Gifts awaiting payment</p>
+                <p className="text-body-sm text-on-surface-variant mt-1">No proof in queue yet</p>
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/admin/registrations"
+                className="block rounded-xl border border-outline-variant bg-white p-4 hover:border-primary/30"
+              >
+                <p className="text-display-sm text-primary tabular-nums">
+                  {data.reconciliation.unpaid_registrations}
+                </p>
+                <p className="text-label-md text-primary font-bold mt-1">Unpaid / partial regs</p>
+                <p className="text-body-sm text-on-surface-variant mt-1">Fees or bundled gifts</p>
+              </Link>
+            </li>
+          </ul>
+        </section>
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((c) => {
           const t = toneClass[c.tone];
