@@ -56,7 +56,7 @@ export function deriveDonationReconMeta(input: {
       channel: 'registration_bundled',
       channel_label: 'With registration',
       recon_hint:
-        'Approve the Registration proof on Bank / UPI (fee and gift are one payment), or member pays via registration Cashfree.',
+        'Approve the Registration proof on Bank / UPI (fee and donation are one payment), or member pays via registration Cashfree.',
     };
   }
 

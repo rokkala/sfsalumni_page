@@ -30,6 +30,7 @@ const required = [
   '/admin/association',
   '/admin/committee',
   '/admin/donations',
+  '/admin/donation-causes',
   '/admin/payment-accounts',
 ];
 
@@ -41,6 +42,9 @@ assert(shell.includes("label: 'Day of'"), 'Day of group');
 assert(shell.includes("label: 'Events & people'"), 'Events & people group');
 assert(shell.includes("label: 'Content'"), 'Content group');
 assert(shell.includes("label: 'Money'"), 'Money group');
+assert(shell.includes("label: 'Donations'"), 'Donations group');
+assert(shell.includes("label: 'Donation report'"), 'Donation report link');
+assert(shell.includes("label: 'Donation types'"), 'Donation types link');
 assert(shell.includes('text-academic-teal'), 'day-of accent');
 assert(shell.includes('text-jubilee-gold-deep'), 'events accent');
 assert(shell.includes('text-jubilee-amber'), 'money accent');

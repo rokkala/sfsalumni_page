@@ -77,8 +77,8 @@ export async function GET(request: Request) {
     const kind = donationKind(row.event_id);
     const title =
       kind === 'event'
-        ? `Event gift · ${eventRow?.title || 'Jubilee'}`
-        : causeRow?.title || 'Cause gift';
+        ? `Event donation · ${eventRow?.title || 'Jubilee'}`
+        : causeRow?.title || 'Cause donation';
     const recon = deriveDonationReconMeta({
       payment_status: row.payment_status,
       event_id: row.event_id,

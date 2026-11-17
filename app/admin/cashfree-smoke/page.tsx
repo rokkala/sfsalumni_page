@@ -50,8 +50,8 @@ export default function AdminCashfreeSmokePage() {
         unless whitelisted). Choose <strong className="text-on-surface">UPI</strong> in the
         modal. This is a real charge.{' '}
         <strong className="font-semibold text-on-surface">This test does not create a row</strong> in
-        Admin → Donations or Bank / UPI — check the Cashfree merchant dashboard instead. Member gifts
-        at <code className="text-xs">/member/donate</code> do appear under Admin → Donations.
+        Admin → Donation report or Bank / UPI — check the Cashfree merchant dashboard instead. Member
+        donations at <code className="text-xs">/member/donate</code> appear under Donation report.
       </p>
       <button
         type="button"

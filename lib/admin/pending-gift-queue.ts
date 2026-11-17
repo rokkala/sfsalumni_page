@@ -75,8 +75,8 @@ export async function listPendingGiftsWithoutProof(
     const kind: 'cause' | 'event' = row.event_id ? 'event' : 'cause';
     const label =
       kind === 'event'
-        ? `Event gift · ${(event as { title?: string } | null)?.title || 'Jubilee'}`
-        : (cause as { title?: string } | null)?.title || 'Cause gift';
+        ? `Event donation · ${(event as { title?: string } | null)?.title || 'Jubilee'}`
+        : (cause as { title?: string } | null)?.title || 'Cause donation';
     return {
       id: row.id,
       amount_paise: row.amount_paise,

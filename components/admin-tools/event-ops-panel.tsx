@@ -162,8 +162,8 @@ export default function EventOpsPanel() {
                         <div>
                             <h2 className="text-headline-sm text-primary">Money together</h2>
                             <p className="text-body-sm text-on-surface-variant mt-1 max-w-2xl">
-                                Registration fees, jubilee add-on gifts on the form, and separate cause
-                                gifts at <code className="text-label-sm">/member/donate</code>.
+                                Registration fees, jubilee add-on donations on the form, and separate
+                                cause donations at <code className="text-label-sm">/member/donate</code>.
                             </p>
                         </div>
                         <p className="text-headline-sm text-jubilee-gold-deep tabular-nums font-semibold">
@@ -188,7 +188,7 @@ export default function EventOpsPanel() {
                         </div>
                         <div className="rounded-xl border border-outline-variant bg-white p-4">
                             <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">
-                                Event add-on gifts
+                                Registration donations
                             </p>
                             <p className="mt-2 text-headline-sm text-primary tabular-nums">
                                 {formatCostForDisplay(data.gifts.event_gifts.paid_paise)}
@@ -200,7 +200,7 @@ export default function EventOpsPanel() {
                         </div>
                         <div className="rounded-xl border border-outline-variant bg-white p-4">
                             <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">
-                                Cause gifts
+                                Standalone donations
                             </p>
                             <p className="mt-2 text-headline-sm text-primary tabular-nums">
                                 {formatCostForDisplay(data.gifts.cause_gifts.paid_paise)}
@@ -213,7 +213,7 @@ export default function EventOpsPanel() {
                         </div>
                         <div className="rounded-xl border border-outline-variant bg-white p-4">
                             <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">
-                                All gifts received
+                                All donations received
                             </p>
                             <p className="mt-2 text-headline-sm text-primary tabular-nums">
                                 {formatCostForDisplay(data.gifts_paid_paise ?? 0)}
@@ -221,7 +221,7 @@ export default function EventOpsPanel() {
                             <p className="text-label-sm text-on-surface-variant mt-1">
                                 Pending {formatCostForDisplay(data.gifts_pending_paise ?? 0)} ·{' '}
                                 <Link href="/admin/donations" className="text-primary underline">
-                                    Donations
+                                    Donation report
                                 </Link>
                             </p>
                         </div>

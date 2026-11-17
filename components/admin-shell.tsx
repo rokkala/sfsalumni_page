@@ -152,16 +152,29 @@ const NAV_GROUPS: AdminNavGroup[] = [
     label: 'Money',
     links: [
       {
+        href: '/admin/payment-accounts',
+        label: 'Bank / UPI',
+        icon: 'account_balance',
+        iconClass: 'text-jubilee-amber',
+        wellClass: 'bg-jubilee-amber/12',
+      },
+    ],
+  },
+  {
+    id: 'donations',
+    label: 'Donations',
+    links: [
+      {
         href: '/admin/donations',
-        label: 'Donate setup',
-        icon: 'volunteer_activism',
+        label: 'Donation report',
+        icon: 'receipt_long',
         iconClass: 'text-jubilee-amber',
         wellClass: 'bg-jubilee-amber/12',
       },
       {
-        href: '/admin/payment-accounts',
-        label: 'Bank / UPI',
-        icon: 'account_balance',
+        href: '/admin/donation-causes',
+        label: 'Donation types',
+        icon: 'volunteer_activism',
         iconClass: 'text-jubilee-amber',
         wellClass: 'bg-jubilee-amber/12',
       },

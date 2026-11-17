@@ -92,19 +92,19 @@ export default function AdminOverviewPage() {
     {
       label: 'Total received',
       value: totalReceived,
-      hint: `Regs ${moneyPaid} · gifts ${giftsPaid} · due ${moneyDue}`,
+      hint: `Regs ${moneyPaid} · donations ${giftsPaid} · due ${moneyDue}`,
       icon: 'payments',
       tone: 'amber' as const,
       onClick: () => setReconciledOpen(true),
     },
     {
       href: '/admin/donations',
-      label: 'Gifts received',
+      label: 'Donations received',
       value: giftsPaid,
       hint:
         data?.gifts != null
-          ? `Cause ${data.gifts.cause_gifts.count} · event add-on ${data.gifts.event_gifts.count} paid`
-          : 'Cause + event add-on gifts',
+          ? `Cause ${data.gifts.cause_gifts.count} · registration ${data.gifts.event_gifts.count} paid`
+          : 'All paid donation rows',
       icon: 'volunteer_activism',
       tone: 'gold' as const,
     },
@@ -161,7 +161,7 @@ export default function AdminOverviewPage() {
         <section className="rounded-2xl border border-primary/15 bg-surface-paper p-5 mb-6 shadow-sm">
           <h2 className="text-headline-sm text-primary">Reconciliation queue</h2>
           <p className="text-body-sm text-on-surface-variant mt-1 mb-4">
-            Work through these in order: bank proofs → gifts without proof → unpaid registrations.
+            Work through these in order: bank proofs → donations without proof → unpaid registrations.
           </p>
           <ul className="grid gap-3 sm:grid-cols-3">
             <li>
@@ -174,7 +174,8 @@ export default function AdminOverviewPage() {
                 </p>
                 <p className="text-label-md text-primary font-bold mt-1">UTR proofs to review</p>
                 <p className="text-body-sm text-on-surface-variant mt-1">
-                  Registration + cause gifts ({data.reconciliation.pending_cause_gifts_queued} cause-only)
+                  Registration + cause donations ({data.reconciliation.pending_cause_gifts_queued}{' '}
+                  cause-only)
                 </p>
               </Link>
             </li>
@@ -186,7 +187,7 @@ export default function AdminOverviewPage() {
                 <p className="text-display-sm text-primary tabular-nums">
                   {data.reconciliation.pending_gifts_without_proof}
                 </p>
-                <p className="text-label-md text-primary font-bold mt-1">Gifts awaiting payment</p>
+                <p className="text-label-md text-primary font-bold mt-1">Donations awaiting payment</p>
                 <p className="text-body-sm text-on-surface-variant mt-1">No proof in queue yet</p>
               </Link>
             </li>
@@ -199,7 +200,7 @@ export default function AdminOverviewPage() {
                   {data.reconciliation.unpaid_registrations}
                 </p>
                 <p className="text-label-md text-primary font-bold mt-1">Unpaid / partial regs</p>
-                <p className="text-body-sm text-on-surface-variant mt-1">Fees or bundled gifts</p>
+                <p className="text-body-sm text-on-surface-variant mt-1">Fees or bundled donations</p>
               </Link>
             </li>
           </ul>

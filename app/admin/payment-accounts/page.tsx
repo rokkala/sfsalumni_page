@@ -33,8 +33,8 @@ type PendingGiftWithoutProof = {
 };
 
 function proofSourceLabel(sourceType: string): string {
-  if (sourceType === 'donation') return 'Cause gift';
-  if (sourceType === 'registration') return 'Registration (fee ± gift)';
+  if (sourceType === 'donation') return 'Cause donation';
+  if (sourceType === 'registration') return 'Registration (fee ± donation)';
   return sourceType;
 }
 
@@ -446,11 +446,11 @@ export default function AdminPaymentAccountsPage() {
             <p className="text-body-sm text-on-surface-variant mt-1">
               Open a proof to check UTR and screenshot. Approve marks paid; reject leaves unpaid.
               Select several for bulk approve or reject.{' '}
-              <strong className="font-semibold text-on-surface">Cause gifts</strong> from{' '}
+              <strong className="font-semibold text-on-surface">Cause donations</strong> from{' '}
               <code className="text-label-sm">/member/donate</code> appear as{' '}
-              <strong className="font-semibold text-on-surface">Cause gift</strong>; jubilee
-              add-on gifts ride on <strong className="font-semibold text-on-surface">Registration</strong>{' '}
-              proofs.
+              <strong className="font-semibold text-on-surface">Cause donation</strong>; jubilee
+              add-on donations ride on <strong className="font-semibold text-on-surface">
+              Registration</strong> proofs.
             </p>
           </div>
           {proofs.length > 0 ? (
@@ -479,7 +479,7 @@ export default function AdminPaymentAccountsPage() {
           <section className="rounded-xl border border-jubilee-gold-deep/40 bg-jubilee-gold-light/30 p-4 space-y-3">
             <p className="text-body-sm text-on-surface">
               <strong className="font-semibold text-primary">
-                {pendingGiftsWithoutProof.length} pending gift
+                {pendingGiftsWithoutProof.length} pending donation
                 {pendingGiftsWithoutProof.length === 1 ? '' : 's'}
               </strong>{' '}
               in the ledger with no UTR proof in this queue yet. The member still needs to pay and
@@ -507,7 +507,7 @@ export default function AdminPaymentAccountsPage() {
             </ul>
             {pendingGiftsWithoutProof.length > 8 ? (
               <p className="text-label-sm text-on-surface-variant">
-                …and {pendingGiftsWithoutProof.length - 8} more — see Donations.
+                …and {pendingGiftsWithoutProof.length - 8} more — see Donation report.
               </p>
             ) : null}
           </section>
