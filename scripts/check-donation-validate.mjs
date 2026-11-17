@@ -9,6 +9,7 @@ import {
   DONATION_MAX_MESSAGE,
   DONATION_MIN_PAISE,
 } from '../lib/donations/validate.ts';
+import { registrationSaveAllowed } from '../lib/registration/registration.ts';
 
 if (DONATION_MIN_PAISE !== 100) throw new Error('min paise');
 if (DONATION_AMOUNT_CHIPS_PAISE.join(',') !== '50000,100000,250000,500000') {
@@ -32,5 +33,9 @@ try {
 } catch (e) {
   if (!(e instanceof Error) || !/message/i.test(e.message)) throw e;
 }
+
+if (!registrationSaveAllowed(false, 0, 100)) throw new Error('donate-only min');
+if (registrationSaveAllowed(false, 0, 0)) throw new Error('donate-only needs amount');
+if (!registrationSaveAllowed(true, 0, 0)) throw new Error('attending ok without donation');
 
 console.log('ok: donation validate');

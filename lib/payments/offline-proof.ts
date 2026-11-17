@@ -90,8 +90,11 @@ export function verificationStatusLabel(input: {
   paymentStatus: string | null | undefined;
   pendingProof: boolean;
   bankReference: string | null | undefined;
+  /** Fee + donation still owed; fee alone may show as paid when total cost is ₹0. */
+  totalDuePaise?: number | null;
 }): string {
-  if (input.paymentStatus === 'paid') return 'paid';
+  const totalDue = Math.max(0, Math.floor(Number(input.totalDuePaise) || 0));
+  if (input.paymentStatus === 'paid' && totalDue === 0) return 'paid';
   if (input.pendingProof || Boolean(String(input.bankReference ?? '').trim())) {
     return 'pending verification';
   }

@@ -15,7 +15,7 @@ import { normalizePhoneNumber, phoneValidationError, splitE164 } from '@/lib/pho
 import {
     clampVehicleCount,
     formatCostForDisplay,
-    isEventAttending,
+    registrationSaveAllowed,
     MAX_GUESTS,
     vehicleCountsProblem,
 } from '@/lib/registration/registration';
@@ -570,8 +570,11 @@ function RegistrationPageInner() {
             setError('Guests eating cannot be more than the number of guests');
             return { ok: false };
         }
-        if (!isEventAttending(formData.attending, formData.number_of_guests)) {
-            setError('Choose at least one person to attend: you or a guest');
+        const intendedDonation = donationIntentPaise(formData);
+        if (!registrationSaveAllowed(formData.attending, formData.number_of_guests, intendedDonation)) {
+            setError(
+                'Enter a donation (at least ₹1), or choose at least one person to attend: you or a guest'
+            );
             return { ok: false };
         }
         if (formData.has_parking) {

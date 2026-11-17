@@ -47,6 +47,23 @@ export function isEventAttending(alumnusAttending: boolean, guestCount: number):
   return alumnusAttending || clampGuestCount(guestCount) > 0;
 }
 
+/** Rs 1 — same floor as registration custom donation and standalone donate. */
+export const REGISTRATION_DONATION_MIN_PAISE = 100;
+
+/**
+ * Registration can be saved when someone is attending, or when the alumnus is not coming but
+ * pledges at least the minimum donation (donate-only path).
+ */
+export function registrationSaveAllowed(
+  alumnusAttending: boolean,
+  guestCount: number,
+  intendedDonationPaise: number
+): boolean {
+  if (isEventAttending(alumnusAttending, guestCount)) return true;
+  const donation = Math.max(0, Math.floor(Number(intendedDonationPaise) || 0));
+  return donation >= REGISTRATION_DONATION_MIN_PAISE;
+}
+
 /** Whether anyone in the registration is eating. The shared food choice only matters then. */
 export function anyoneEating(alumnusEats: boolean, guestsEating: number): boolean {
   return alumnusEats || Math.floor(Number(guestsEating) || 0) > 0;

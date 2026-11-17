@@ -59,8 +59,8 @@ export default function AdminDonationsPage() {
         <code className="text-label-sm">/member/donate</code> and add-ons on registration). Each row
         shows <strong className="font-semibold text-on-surface">channel</strong> and the next
         reconciliation step. UTR review is on{' '}
-        <Link href="/admin/payment-accounts" className="text-primary underline font-medium">
-          Bank / UPI
+        <Link href="/admin/remittance-proofs" className="text-primary underline font-medium">
+          Remittance proofs
         </Link>
         . To add funds members can choose, use{' '}
         <Link href="/admin/donation-causes" className="text-primary underline font-medium">
@@ -134,19 +134,19 @@ export default function AdminDonationsPage() {
               {d.proof_id ? (
                 <p className="mt-2">
                   <Link
-                    href="/admin/payment-accounts"
+                    href="/admin/remittance-proofs"
                     className="text-primary text-label-sm font-bold uppercase tracking-wider underline"
                   >
-                    Review UTR proof on Bank / UPI
+                    Review UTR proof
                   </Link>
                 </p>
               ) : d.payment_status === 'pending' && d.kind === 'event' ? (
                 <p className="mt-2">
                   <Link
-                    href="/admin/payment-accounts"
+                    href="/admin/remittance-proofs"
                     className="text-primary text-label-sm font-bold uppercase tracking-wider underline"
                   >
-                    Review registration proof on Bank / UPI
+                    Review registration proof
                   </Link>
                 </p>
               ) : null}

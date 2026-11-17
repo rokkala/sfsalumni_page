@@ -609,6 +609,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                     paymentStatus: money.paymentStatus,
                                     pendingProof: Boolean(pendingProof),
                                     bankReference: savedBankReference,
+                                    totalDuePaise: money.totalDuePaise,
                                 })}
                             </span>
                         </p>

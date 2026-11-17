@@ -32,6 +32,7 @@ const required = [
   '/admin/donations',
   '/admin/donation-causes',
   '/admin/payment-accounts',
+  '/admin/remittance-proofs',
 ];
 
 for (const href of required) {

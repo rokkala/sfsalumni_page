@@ -36,8 +36,8 @@ import {
   clampGuestsEating,
   clampVehicleCount,
   getEventCostBreakdown,
-  isEventAttending,
   normalizeFoodPreference,
+  registrationSaveAllowed,
   vehicleCountsProblem,
 } from '@/lib/registration/registration';
 import {
@@ -340,10 +340,30 @@ export async function registerAccountForEvent(
   }
   const guestCount = clampGuestCount(requestedGuests);
   const attending = body.attending !== false;
-  if (!isEventAttending(attending, guestCount)) {
+
+  // Donation intent (checked before donate-only save when not attending).
+  let intendedDonationPaise = 0;
+  if (body.intended_donation_paise != null && body.intended_donation_paise !== '') {
+    const raw = Number(body.intended_donation_paise);
+    if (raw !== 0) {
+      try {
+        intendedDonationPaise = assertDonationAmountPaise(raw);
+      } catch (err) {
+        return {
+          status: 400,
+          payload: { error: err instanceof Error ? err.message : 'Invalid donation' },
+        };
+      }
+    }
+  }
+
+  if (!registrationSaveAllowed(attending, guestCount, intendedDonationPaise)) {
     return {
       status: 400,
-      payload: { error: 'Choose at least one person to attend: you or a guest' },
+      payload: {
+        error:
+          'Enter a donation (at least ₹1), or choose at least one person to attend: you or a guest',
+      },
     };
   }
 
@@ -389,22 +409,6 @@ export async function registerAccountForEvent(
   const phoneParts = splitE164(phone);
   const phoneErr = phoneValidationError(phoneParts.isd, phoneParts.national);
   if (phoneErr) return { status: 400, payload: { error: phoneErr } };
-
-  // Donation intent. The client sends an amount to donate, never a payable total.
-  let intendedDonationPaise = 0;
-  if (body.intended_donation_paise != null && body.intended_donation_paise !== '') {
-    const raw = Number(body.intended_donation_paise);
-    if (raw !== 0) {
-      try {
-        intendedDonationPaise = assertDonationAmountPaise(raw);
-      } catch (err) {
-        return {
-          status: 400,
-          payload: { error: err instanceof Error ? err.message : 'Invalid donation' },
-        };
-      }
-    }
-  }
 
   const { data: existingRaw } = await admin
     .from('event_registrations')
@@ -511,7 +515,12 @@ export async function registerAccountForEvent(
   const country = String(body.country || '').trim();
   const location = formatLocation(city, country) || me.current_location || null;
 
-  const jubilee = catalog.is_primary ? jubileeStatusFromPayment(payment_status) : undefined;
+  const totalDue = feeDue + donationDue;
+  const jubilee = catalog.is_primary
+    ? totalDue > 0
+      ? 'pending_payment'
+      : jubileeStatusFromPayment(payment_status)
+    : undefined;
   const corePatch: Record<string, unknown> = {
     full_name: fullName,
     phone_number: phone,
@@ -550,7 +559,6 @@ export async function registerAccountForEvent(
     if (packedError) console.error('reg account bio pack', packedError);
   }
 
-  const totalDue = feeDue + donationDue;
   return {
     status: 200,
     payload: {

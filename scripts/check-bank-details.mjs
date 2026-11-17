@@ -217,8 +217,25 @@ if (
 ) {
   throw new Error('status bank ref');
 }
-if (verificationStatusLabel({ paymentStatus: 'paid', pendingProof: true, bankReference: 'x' }) !== 'paid') {
+if (
+  verificationStatusLabel({
+    paymentStatus: 'paid',
+    pendingProof: true,
+    bankReference: 'x',
+    totalDuePaise: 0,
+  }) !== 'paid'
+) {
   throw new Error('status paid wins');
+}
+if (
+  verificationStatusLabel({
+    paymentStatus: 'paid',
+    pendingProof: false,
+    bankReference: '',
+    totalDuePaise: 50000,
+  }) !== 'not submitted'
+) {
+  throw new Error('status paid fee-only but donation due');
 }
 
 const shown = pendingProofDisplay({ utr: 'UTR99', screenshot_path: null });

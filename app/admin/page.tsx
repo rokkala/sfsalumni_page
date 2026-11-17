@@ -166,7 +166,7 @@ export default function AdminOverviewPage() {
           <ul className="grid gap-3 sm:grid-cols-3">
             <li>
               <Link
-                href="/admin/payment-accounts"
+                href="/admin/remittance-proofs"
                 className="block rounded-xl border border-outline-variant bg-white p-4 hover:border-primary/30"
               >
                 <p className="text-display-sm text-primary tabular-nums">

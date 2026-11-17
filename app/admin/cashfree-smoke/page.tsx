@@ -67,8 +67,8 @@ export default function AdminCashfreeSmokePage() {
         </p>
       ) : null}
       <p className="text-body-sm mt-6">
-        <Link href="/admin/payment-accounts" className="text-primary underline">
-          Back to payment accounts
+        <Link href="/admin/remittance-proofs" className="text-primary underline">
+          Back to remittance proofs
         </Link>
       </p>
     </AdminShell>

@@ -221,7 +221,7 @@ export const COUNTRY_OPTIONS = COUNTRIES.map((country) => ({ value: country, lab
 
 // ---- Donation -------------------------------------------------------------
 
-export const DONATION_MIN_RUPEES = 100;
+export const DONATION_MIN_RUPEES = 1;
 export const DONATION_MAX_RUPEES = 200000;
 
 export const DONATION_OPTIONS: ReadonlyArray<{ value: DonationOption; label: string; rupees: number }> = [
