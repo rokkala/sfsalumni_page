@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import { useEffect, useId, useRef, useState } from 'react';
 import { formatCostForDisplay } from '@/lib/registration/registration';
@@ -167,22 +166,6 @@ export default function ReconciledRegsModal({
               </tbody>
             </table>
           )}
-        </div>
-        <div className="border-t border-outline-variant px-6 py-4 flex flex-wrap gap-3 justify-end bg-surface-ivory/50">
-          <Link
-            href={`/admin/registrations${eventId ? `?event=${eventId}` : ''}`}
-            className="rounded-lg border border-primary/20 px-4 py-2 text-label-sm text-primary hover:bg-secondary-container/40"
-            onClick={onClose}
-          >
-            Open all registrations
-          </Link>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg bg-primary text-on-primary px-4 py-2 text-label-sm cursor-pointer"
-          >
-            Close
-          </button>
         </div>
       </div>
     </div>,

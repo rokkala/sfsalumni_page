@@ -3,8 +3,6 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
-type Tab = 'membership' | 'memories' | 'stories';
-
 type Membership = {
   id: string;
   full_name: string;
@@ -39,19 +37,11 @@ type Payload = {
   stories: Story[];
 };
 
-const TAB_LABELS: Record<Tab, string> = {
-  membership: 'New members',
-  memories: 'Memories',
-  stories: 'Stories',
-};
-
 export default function ApprovalsPanel() {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
-  const [tab, setTab] = useState<Tab>('membership');
-  const [pickedInitialTab, setPickedInitialTab] = useState(false);
 
   const load = useCallback(async () => {
     setError('');
@@ -64,14 +54,6 @@ export default function ApprovalsPanel() {
     }
     setData(payload as Payload);
   }, []);
-
-  useEffect(() => {
-    if (!data || pickedInitialTab) return;
-    if (data.counts.memberships > 0) setTab('membership');
-    else if (data.counts.memories > 0) setTab('memories');
-    else if (data.counts.stories > 0) setTab('stories');
-    setPickedInitialTab(true);
-  }, [data, pickedInitialTab]);
 
   useEffect(() => {
     void load();
@@ -151,13 +133,6 @@ export default function ApprovalsPanel() {
   const total =
     (data?.counts.memberships || 0) + (data?.counts.memories || 0) + (data?.counts.stories || 0);
 
-  const tabCount = (key: Tab) => {
-    if (!data) return '—';
-    if (key === 'membership') return data.counts.memberships;
-    if (key === 'memories') return data.counts.memories;
-    return data.counts.stories;
-  };
-
   return (
     <>
       {error && (
@@ -171,197 +146,155 @@ export default function ApprovalsPanel() {
         </p>
       )}
 
-      <p className="text-body-sm text-on-surface-variant mb-4">
-        Inbox total: <span className="tabular-nums text-primary font-bold">{total}</span>. Full queues:{' '}
-        <Link href="/admin/membership" className="text-primary underline">
+      <p className="text-body-sm text-on-surface-variant mb-6">
+        Pending inbox: <span className="tabular-nums text-primary font-bold">{total}</span>
+        {' · '}
+        <Link href="/admin/membership" className="text-primary underline-offset-2 hover:underline">
           Membership
         </Link>
-        ,{' '}
-        <Link href="/admin/memories" className="text-primary underline">
+        {' · '}
+        <Link href="/admin/memories" className="text-primary underline-offset-2 hover:underline">
           Memories
         </Link>
-        ,{' '}
-        <Link href="/admin/stories" className="text-primary underline">
+        {' · '}
+        <Link href="/admin/stories" className="text-primary underline-offset-2 hover:underline">
           Stories
         </Link>
-        .
       </p>
 
-      <div
-        role="tablist"
-        aria-label="Approval categories"
-        className="flex flex-wrap gap-2 mb-6 border-b border-outline-variant pb-3"
-      >
-        {(['membership', 'memories', 'stories'] as Tab[]).map((key) => {
-          const active = tab === key;
-          const count = tabCount(key);
-          return (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setTab(key)}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-label-sm cursor-pointer transition-colors ${
-                active
-                  ? 'bg-primary text-on-primary shadow-sm'
-                  : 'bg-surface-container text-primary hover:bg-secondary-container/50'
-              }`}
-            >
-              {TAB_LABELS[key]}
-              <span
-                className={`inline-flex min-w-[1.5rem] justify-center rounded-md px-1.5 py-0.5 text-label-sm tabular-nums ${
-                  active ? 'bg-on-primary/15' : 'bg-white'
-                }`}
+      <section className="mb-8">
+        <h2 className="text-headline-sm text-primary mb-3">
+          Memberships ({data?.counts.memberships ?? 0})
+        </h2>
+        <ul className="space-y-3">
+          {(data?.memberships || []).length === 0 ? (
+            <li className="text-body-sm text-on-surface-variant">No pending memberships.</li>
+          ) : (
+            data!.memberships.map((m) => (
+              <li
+                key={m.id}
+                className="rounded-2xl border border-primary/10 bg-surface-paper p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between"
               >
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {tab === 'membership' ? (
-        <section role="tabpanel" aria-label="New members">
-          <ul className="space-y-3">
-            {(data?.memberships || []).length === 0 ? (
-              <li className="text-body-sm text-on-surface-variant rounded-xl border border-primary/10 p-6 bg-surface-paper">
-                No pending memberships.
+                <div>
+                  <p className="font-medium text-primary">{m.full_name}</p>
+                  <p className="text-body-sm text-on-surface-variant">
+                    {m.email}
+                    {m.batch != null ? ` · Batch ${m.batch}` : ''}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={busy === m.id}
+                    onClick={() => void decideMember(m.id, 'verified')}
+                    className="rounded-lg bg-primary text-on-primary px-4 py-2 text-label-sm disabled:opacity-50 cursor-pointer"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy === m.id}
+                    onClick={() => void decideMember(m.id, 'rejected')}
+                    className="rounded-lg border border-error/30 text-error px-4 py-2 text-label-sm disabled:opacity-50 cursor-pointer"
+                  >
+                    Reject
+                  </button>
+                </div>
               </li>
-            ) : (
-              data!.memberships.map((m) => (
-                <li
-                  key={m.id}
-                  className="rounded-2xl border border-primary/10 bg-surface-paper p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between"
-                >
-                  <div>
-                    <p className="font-medium text-primary">{m.full_name}</p>
+            ))
+          )}
+        </ul>
+      </section>
+
+      <section className="mb-8">
+        <h2 className="text-headline-sm text-primary mb-3">Memories ({data?.counts.memories ?? 0})</h2>
+        <ul className="space-y-3">
+          {(data?.memories || []).length === 0 ? (
+            <li className="text-body-sm text-on-surface-variant">No pending memories.</li>
+          ) : (
+            data!.memories.map((m) => (
+              <li
+                key={m.id}
+                className="rounded-2xl border border-primary/10 bg-surface-paper p-4 flex flex-col sm:flex-row gap-4 justify-between"
+              >
+                <div className="flex gap-3 min-w-0">
+                  {m.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={m.image_url} alt="" className="h-16 w-16 rounded-lg object-cover shrink-0" />
+                  ) : null}
+                  <div className="min-w-0">
+                    <p className="font-medium text-primary truncate">{m.title}</p>
                     <p className="text-body-sm text-on-surface-variant">
-                      {m.email}
-                      {m.phone_number ? ` · ${m.phone_number}` : ''}
-                      {m.batch != null ? ` · Batch ${m.batch}` : ''}
+                      {m.submitter_name || 'Member'}
+                      {m.batch_label || m.batch_year != null
+                        ? ` · ${m.batch_label || m.batch_year}`
+                        : ''}
                     </p>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      disabled={busy === m.id}
-                      onClick={() => void decideMember(m.id, 'verified')}
-                      className="rounded-lg bg-primary text-on-primary px-4 py-2 text-label-sm disabled:opacity-50 cursor-pointer"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy === m.id}
-                      onClick={() => void decideMember(m.id, 'rejected')}
-                      className="rounded-lg border border-error/30 text-error px-4 py-2 text-label-sm disabled:opacity-50 cursor-pointer"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </li>
-              ))
-            )}
-          </ul>
-        </section>
-      ) : null}
-
-      {tab === 'memories' ? (
-        <section role="tabpanel" aria-label="Memories">
-          <ul className="space-y-3">
-            {(data?.memories || []).length === 0 ? (
-              <li className="text-body-sm text-on-surface-variant rounded-xl border border-primary/10 p-6 bg-surface-paper">
-                No pending memories.
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={busy === m.id}
+                    onClick={() => void decideMemory(m.id, 'published')}
+                    className="rounded-lg bg-primary text-on-primary px-4 py-2 text-label-sm disabled:opacity-50 cursor-pointer"
+                  >
+                    Publish
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy === m.id}
+                    onClick={() => void decideMemory(m.id, 'rejected')}
+                    className="rounded-lg border border-error/30 text-error px-4 py-2 text-label-sm disabled:opacity-50 cursor-pointer"
+                  >
+                    Reject
+                  </button>
+                </div>
               </li>
-            ) : (
-              data!.memories.map((m) => (
-                <li
-                  key={m.id}
-                  className="rounded-2xl border border-primary/10 bg-surface-paper p-4 flex flex-col sm:flex-row gap-4 justify-between"
-                >
-                  <div className="flex gap-3 min-w-0">
-                    {m.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={m.image_url} alt="" className="h-16 w-16 rounded-lg object-cover shrink-0" />
-                    ) : null}
-                    <div className="min-w-0">
-                      <p className="font-medium text-primary truncate">{m.title}</p>
-                      <p className="text-body-sm text-on-surface-variant">
-                        {m.submitter_name || 'Member'}
-                        {m.batch_label || m.batch_year != null
-                          ? ` · ${m.batch_label || m.batch_year}`
-                          : ''}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      type="button"
-                      disabled={busy === m.id}
-                      onClick={() => void decideMemory(m.id, 'published')}
-                      className="rounded-lg bg-primary text-on-primary px-4 py-2 text-label-sm disabled:opacity-50 cursor-pointer"
-                    >
-                      Publish
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy === m.id}
-                      onClick={() => void decideMemory(m.id, 'rejected')}
-                      className="rounded-lg border border-error/30 text-error px-4 py-2 text-label-sm disabled:opacity-50 cursor-pointer"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </li>
-              ))
-            )}
-          </ul>
-        </section>
-      ) : null}
+            ))
+          )}
+        </ul>
+      </section>
 
-      {tab === 'stories' ? (
-        <section role="tabpanel" aria-label="Stories">
-          <ul className="space-y-3">
-            {(data?.stories || []).length === 0 ? (
-              <li className="text-body-sm text-on-surface-variant rounded-xl border border-primary/10 p-6 bg-surface-paper">
-                No pending stories.
+      <section>
+        <h2 className="text-headline-sm text-primary mb-3">Stories ({data?.counts.stories ?? 0})</h2>
+        <ul className="space-y-3">
+          {(data?.stories || []).length === 0 ? (
+            <li className="text-body-sm text-on-surface-variant">No pending stories.</li>
+          ) : (
+            data!.stories.map((s) => (
+              <li
+                key={s.id}
+                className="rounded-2xl border border-primary/10 bg-surface-paper p-4 flex flex-col gap-3"
+              >
+                <div>
+                  <p className="font-medium text-primary">{s.title}</p>
+                  <p className="text-body-sm text-on-surface-variant mt-1">{s.author_name || 'Member'}</p>
+                  <p className="text-body-sm text-navy-subtle mt-2 line-clamp-3 whitespace-pre-wrap">{s.body}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={busy === s.id}
+                    onClick={() => void decideStory(s.id, 'published')}
+                    className="rounded-lg bg-primary text-on-primary px-4 py-2 text-label-sm disabled:opacity-50 cursor-pointer"
+                  >
+                    Publish
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy === s.id}
+                    onClick={() => void decideStory(s.id, 'rejected')}
+                    className="rounded-lg border border-error/30 text-error px-4 py-2 text-label-sm disabled:opacity-50 cursor-pointer"
+                  >
+                    Reject
+                  </button>
+                </div>
               </li>
-            ) : (
-              data!.stories.map((s) => (
-                <li
-                  key={s.id}
-                  className="rounded-2xl border border-primary/10 bg-surface-paper p-4 flex flex-col gap-3"
-                >
-                  <div>
-                    <p className="font-medium text-primary">{s.title}</p>
-                    <p className="text-body-sm text-on-surface-variant mt-1">{s.author_name || 'Member'}</p>
-                    <p className="text-body-sm text-navy-subtle mt-2 line-clamp-3 whitespace-pre-wrap">{s.body}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      disabled={busy === s.id}
-                      onClick={() => void decideStory(s.id, 'published')}
-                      className="rounded-lg bg-primary text-on-primary px-4 py-2 text-label-sm disabled:opacity-50 cursor-pointer"
-                    >
-                      Publish
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy === s.id}
-                      onClick={() => void decideStory(s.id, 'rejected')}
-                      className="rounded-lg border border-error/30 text-error px-4 py-2 text-label-sm disabled:opacity-50 cursor-pointer"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </li>
-              ))
-            )}
-          </ul>
-        </section>
-      ) : null}
+            ))
+          )}
+        </ul>
+      </section>
     </>
   );
 }
