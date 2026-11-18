@@ -649,7 +649,10 @@ function RegistrationPageInner() {
                     intended_donation_paise: donationIntentPaise(formData),
                 }),
             });
-            const payload = (await res.json().catch(() => ({}))) as { error?: string };
+            const payload = (await res.json().catch(() => ({}))) as {
+                error?: string;
+                withdrawn_pending_proof?: boolean;
+            };
             if (!res.ok) {
                 setError(payload.error || 'Could not save registration');
                 setSaving(false);
@@ -664,11 +667,14 @@ function RegistrationPageInner() {
             }
 
             setSavedFingerprint(choicesFingerprint(formData));
-            setSaveMessage(
+            let saveText =
                 loaded.money.totalDuePaise > 0
                     ? `Saved. Amount due ${formatCostForDisplay(loaded.money.totalDuePaise)}.`
-                    : 'Saved. Nothing is due.'
-            );
+                    : 'Saved. Nothing is due.';
+            if (payload.withdrawn_pending_proof) {
+                saveText += ' Your pending payment proof was withdrawn — submit proof again if money is still due.';
+            }
+            setSaveMessage(saveText);
             setSaving(false);
             return loaded;
         } catch {
@@ -851,7 +857,7 @@ function RegistrationPageInner() {
             role="status"
         >
             {verificationPending
-                ? 'Payment submitted — waiting for committee confirmation before your QR is ready'
+                ? 'Payment submitted — you can still save changes to fix details (this withdraws the pending proof)'
                 : 'Registration is not complete until payment is made and the QR code is generated'}
         </div>
     ) : null;

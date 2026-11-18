@@ -13,9 +13,9 @@ export type PendingOfflineProof = {
 /** Bank reference column value used for admin “awaiting verification” when only a screenshot exists. */
 export const SCREENSHOT_BANK_REFERENCE = 'Screenshot on file';
 
-/** Member-facing message when guest/food/donation edits are blocked. */
+/** Legacy copy; saving now withdraws pending proof instead of blocking edits. */
 export const PENDING_PROOF_LOCK_MESSAGE =
-  'Your Bank / UPI proof is pending committee review. Guest count, food choice, and donation cannot be changed until it is reviewed.';
+  'Your Bank / UPI proof is pending committee review. Save changes to withdraw it and update your registration.';
 
 /** Member-facing message when another proof submit is blocked. */
 export const PENDING_PROOF_ALREADY_MESSAGE =

@@ -210,7 +210,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
 
     const isSeniorSponsored = isSeniorSponsoredBatch(formData.batch);
     const feeLabel = formatCostForDisplay(EVENT_FEE_PER_PERSON_PAISE);
-    const choicesLocked = busy || verificationPending;
+    const choicesLocked = busy;
     const [payOpen, setPayOpen] = useState(false);
     const [payRegistrationId, setPayRegistrationId] = useState('');
     const [payRegistrationCode, setPayRegistrationCode] = useState('');
@@ -337,7 +337,9 @@ export function RegistrationForm(props: RegistrationFormProps) {
                     )}
                     {verificationPending && (
                         <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface mb-6" role="status">
-                            Proof submitted for verification. Contact the committee if you need to change guests, food, or donation.
+                            Payment proof is with the committee. You can still update this form —{' '}
+                            <strong>Save changes</strong> withdraws that proof so you can fix details and
+                            submit proof again for the new amount.
                         </p>
                     )}
 
@@ -596,7 +598,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             formData={formData}
                             setFormData={setFormData}
                             busy={busy}
-                            donationLocked={donationLocked || verificationPending}
+                            donationLocked={donationLocked}
                             verificationPending={verificationPending}
                         />
 
@@ -650,14 +652,12 @@ export function RegistrationForm(props: RegistrationFormProps) {
                         <div className="flex flex-col sm:flex-row gap-3">
                             <button
                                 type="submit"
-                                disabled={busy || verificationPending}
+                                disabled={busy}
                                 className="flex-1 py-3 rounded-lg bg-primary text-on-primary text-label-md uppercase tracking-wider font-bold hover:bg-navy-subtle disabled:bg-surface-container disabled:text-on-surface-variant transition-all"
                             >
                                 {saving
                                     ? 'Saving…'
-                                    : verificationPending
-                                      ? 'Locked while verification pending'
-                                      : hasSavedReg
+                                    : hasSavedReg
                                         ? 'Save changes'
                                         : 'Save registration'}
                             </button>

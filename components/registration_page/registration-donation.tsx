@@ -54,12 +54,6 @@ export function DonationSection({
                     Your donation is paid. To change it, contact the committee.
                 </p>
             )}
-            {verificationPending && (
-                <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
-                    Donation is locked while Bank / UPI verification is pending.
-                </p>
-            )}
-
             <div className="flex flex-col gap-3">
                 {DONATION_OPTIONS.map((option) => (
                     <div key={option.value} className="flex flex-wrap items-center gap-3">

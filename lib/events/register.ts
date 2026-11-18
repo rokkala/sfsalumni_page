@@ -52,7 +52,7 @@ import {
   mergeProfilePack,
   readPackedProfile,
 } from '@/lib/registration/registration-fields';
-import { PENDING_PROOF_LOCK_MESSAGE } from '@/lib/payments/offline-proof';
+import { withdrawPendingRegistrationProofs } from '@/lib/payments/withdraw-pending-proof';
 import { normalizePhoneNumber, phoneValidationError, splitE164 } from '@/lib/phone';
 import { createAdminClient } from '@/lib/supabase-admin';
 
@@ -452,15 +452,14 @@ export async function registerAccountForEvent(
     .maybeSingle();
   const existing = existingRaw as ExistingRow | null;
 
+  let withdrawnPendingProof = 0;
   if (existing?.id) {
-    const { data: pendingProofRows } = await admin
-      .from('offline_payment_proofs')
-      .select('id')
-      .eq('registration_id', existing.id)
-      .eq('status', 'pending')
-      .limit(1);
-    if (Array.isArray(pendingProofRows) && pendingProofRows.length > 0) {
-      return { status: 400, payload: { error: PENDING_PROOF_LOCK_MESSAGE } };
+    withdrawnPendingProof = await withdrawPendingRegistrationProofs(admin, existing.id);
+    if (withdrawnPendingProof > 0) {
+      await admin
+        .from('event_registrations')
+        .update({ bank_reference: null, updated_at: new Date().toISOString() })
+        .eq('id', existing.id);
     }
   }
 
@@ -615,6 +614,7 @@ export async function registerAccountForEvent(
     payload: {
       ok: true,
       id: regId,
+      withdrawn_pending_proof: withdrawnPendingProof > 0,
       payment_status,
       total_cost_paise: feeTotal,
       amount_paid_paise: priorPaid,
