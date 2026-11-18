@@ -11,6 +11,7 @@ import {
   normalizeRegistrationCode,
   type RegistrationCodeAdmin,
 } from '@/lib/events/registration-code';
+import { parseRegistrationQrScan, verifyRegistrationQrMac } from '@/lib/events/registration-qr-payload';
 import { venuePassSummary } from '@/lib/events/venue-pass';
 import { clampGuestCount, clampGuestsEating } from '@/lib/registration/registration';
 import { createAdminClient } from '@/lib/supabase-admin';
@@ -101,7 +102,8 @@ function one<T>(value: T | T[] | null | undefined): T | null {
 async function loadRow(
   rawCode: string
 ): Promise<{ ok: true; row: GateRow } | { ok: false; status: number; error: string }> {
-  const code = normalizeRegistrationCode(rawCode);
+  const parsed = parseRegistrationQrScan(rawCode);
+  const code = parsed.code;
   if (!code) return { ok: false, status: 400, error: 'Enter a registration ID' };
 
   const admin = createAdminClient();
@@ -127,7 +129,12 @@ async function loadRow(
   }
   if (!data) return { ok: false, status: 404, error: 'No registration for that ID' };
 
-  return { ok: true, row: data as unknown as GateRow };
+  const row = data as unknown as GateRow;
+  if (parsed.mac && !verifyRegistrationQrMac(code, row.id, parsed.mac)) {
+    return { ok: false, status: 400, error: 'QR signature does not match. Use the pass from your account.' };
+  }
+
+  return { ok: true, row };
 }
 
 function summarize(row: GateRow): GateRegistration {

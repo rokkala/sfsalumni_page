@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import HomeDestinationLanes from '@/components/home-destination-lanes';
 import MemberGate from '@/components/member-gate';
+import MemberPaymentHistory from '@/components/member-payment-history';
 import MemberVenuePass from '@/components/member-venue-pass';
 import PortalShell from '@/components/portal-shell';
 import { firstNameFromFullName } from '@/lib/portal/welcome';
@@ -16,8 +17,6 @@ export default function MemberPage() {
   const [firstName, setFirstName] = useState('friend');
   const [batch, setBatch] = useState<number | null>(null);
   const [welcomeReady, setWelcomeReady] = useState(false);
-  const [membershipPending, setMembershipPending] = useState(false);
-
   useEffect(() => {
     let active = true;
     (async () => {
@@ -31,7 +30,6 @@ export default function MemberPage() {
         const status = String(me.member_status || '');
         const blocked = status === 'rejected' || status === 'suspended';
         if (!blocked) setWelcomeReady(true);
-        setMembershipPending(status === 'pending');
       } catch {
         /* keep defaults */
       }
@@ -56,14 +54,8 @@ export default function MemberPage() {
       )}
 
       <MemberGate mode="signed-in">
-        {membershipPending ? (
-          <p className="mb-5 rounded-xl border border-jubilee-gold-deep/30 bg-secondary-container/40 px-4 py-3 text-body-sm text-on-surface">
-            Your membership is awaiting committee verification. Your venue pass still works here;
-            directory and private alumni pages unlock after approval.
-          </p>
-        ) : null}
-
         <MemberVenuePass />
+        <MemberPaymentHistory />
 
         <HomeDestinationLanes />
       </MemberGate>

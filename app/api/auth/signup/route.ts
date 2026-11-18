@@ -86,7 +86,7 @@ export async function POST(request: Request) {
       full_name: fullName,
       phone_number: e164,
       role: 'alumni' as const,
-      member_status: 'pending' as const,
+      member_status: 'verified' as const,
       bio,
     };
     const withColumns = {

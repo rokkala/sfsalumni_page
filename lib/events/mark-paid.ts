@@ -11,17 +11,22 @@
 
 import { amountDuePaise, jubileeStatusFromPayment, statusFromAmounts } from '@/lib/events/balance';
 import {
+  clearRegistrationCode,
   ensureRegistrationCode,
   isEligibleForRegistrationCode,
   readRegistrationCode,
+  shouldExposeRegistrationCode,
   type RegistrationCodeAdmin,
 } from '@/lib/events/registration-code';
+import { needsVenuePass } from '@/lib/events/venue-attendance';
+import { sendVenuePassEmail } from '@/lib/auth/send-pass-email';
+import { clampGuestCount } from '@/lib/registration/registration';
 import { createAdminClient } from '@/lib/supabase-admin';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 const REGISTRATION_COLUMNS =
-  'id,event_id,account_id,attending,total_cost_paise,amount_paid_paise,payment_status,donation_id,razorpay_order_id,razorpay_payment_id';
+  'id,event_id,account_id,attending,number_of_guests,total_cost_paise,amount_paid_paise,payment_status,donation_id,razorpay_order_id,razorpay_payment_id';
 
 const DONATION_COLUMNS = 'id,amount_paise,payment_status';
 
@@ -30,6 +35,7 @@ export type RegistrationSnapshot = {
   event_id: string;
   account_id: string;
   attending: boolean;
+  number_of_guests: number | null;
   total_cost_paise: number;
   amount_paid_paise: number;
   payment_status: string;
@@ -103,10 +109,72 @@ export async function loadDonation(
 export async function issueRegistrationCodeIfEligible(
   admin: AdminClient,
   registrationId: string,
-  input: { paymentStatus: string; donationDuePaise: number }
+  input: {
+    paymentStatus: string;
+    donationDuePaise: number;
+    attending: boolean;
+    guestCount: number;
+  }
 ): Promise<string | null> {
-  if (!isEligibleForRegistrationCode(input)) return null;
-  return ensureRegistrationCode(admin as unknown as RegistrationCodeAdmin, registrationId, 'paid');
+  if (!isEligibleForRegistrationCode(input)) {
+    if (!needsVenuePass(input.attending, input.guestCount)) {
+      await clearRegistrationCode(admin as unknown as RegistrationCodeAdmin, registrationId);
+    }
+    return null;
+  }
+  const prior = await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, registrationId);
+  const code = await ensureRegistrationCode(
+    admin as unknown as RegistrationCodeAdmin,
+    registrationId,
+    'paid'
+  );
+  if (code && code !== prior) {
+    void notifyVenuePassEmail(admin, registrationId, code).catch((e) =>
+      console.error('venue pass email', e)
+    );
+  }
+  return code;
+}
+
+async function notifyVenuePassEmail(
+  admin: AdminClient,
+  registrationId: string,
+  code: string
+): Promise<void> {
+  const { data: reg } = await admin
+    .from('event_registrations')
+    .select('event_catalog(title),alumni_accounts(full_name,email)')
+    .eq('id', registrationId)
+    .maybeSingle();
+  if (!reg) return;
+  const event = Array.isArray(reg.event_catalog) ? reg.event_catalog[0] : reg.event_catalog;
+  const account = Array.isArray(reg.alumni_accounts) ? reg.alumni_accounts[0] : reg.alumni_accounts;
+  const email = String((account as { email?: string } | null)?.email || '').trim();
+  if (!email) return;
+  await sendVenuePassEmail({
+    to: email,
+    fullName: String((account as { full_name?: string } | null)?.full_name || ''),
+    eventTitle: String((event as { title?: string } | null)?.title || 'SFS Event'),
+    registrationCode: code,
+  });
+}
+
+export function passEligibilityFromRegistration(reg: RegistrationSnapshot, donationDuePaise: number) {
+  const guestCount = clampGuestCount(Number(reg.number_of_guests) || 0);
+  return {
+    paymentStatus: reg.payment_status,
+    donationDuePaise,
+    attending: reg.attending !== false,
+    guestCount,
+  };
+}
+
+export function visibleRegistrationCode(
+  code: string | null | undefined,
+  reg: RegistrationSnapshot,
+  donationDuePaise: number
+): string | null {
+  return shouldExposeRegistrationCode(code, passEligibilityFromRegistration(reg, donationDuePaise));
 }
 
 async function syncJubileeStatus(
@@ -141,7 +209,11 @@ async function currentState(admin: AdminClient, registration: RegistrationSnapsh
     amount_paid_paise: paid,
     amount_due_paise: feeDue + donationDue,
     donation_due_paise: donationDue,
-    registration_code: await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, registration.id),
+    registration_code: visibleRegistrationCode(
+      await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, registration.id),
+      registration,
+      donationDue
+    ),
   };
 }
 
@@ -221,7 +293,13 @@ async function settle(
 
   await syncJubileeStatus(admin, registration, paymentStatus);
 
+  const eligibility = passEligibilityFromRegistration(registration, donationDueAfter);
   const registrationCode = await issueRegistrationCodeIfEligible(admin, registration.id, {
+    ...eligibility,
+    paymentStatus,
+  });
+  const codeForClient = shouldExposeRegistrationCode(registrationCode, {
+    ...eligibility,
     paymentStatus,
     donationDuePaise: donationDueAfter,
   });
@@ -232,7 +310,7 @@ async function settle(
     amount_paid_paise: amountPaid,
     amount_due_paise: amountDuePaise(total, amountPaid) + donationDueAfter,
     donation_due_paise: donationDueAfter,
-    registration_code: registrationCode,
+    registration_code: codeForClient,
   };
 }
 

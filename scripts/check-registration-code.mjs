@@ -29,19 +29,39 @@ assert(shouldIssueRegistrationCode('partial', null) === false, 'a balance does n
 assert(shouldIssueRegistrationCode('pending', '') === false, 'unpaid does not get a code');
 
 assert(
-  isEligibleForRegistrationCode({ paymentStatus: 'paid', donationDuePaise: 0 }) === true,
+  isEligibleForRegistrationCode({
+    paymentStatus: 'paid',
+    donationDuePaise: 0,
+    attending: true,
+    guestCount: 0,
+  }) === true,
   'fully settled is eligible'
 );
 assert(
-  isEligibleForRegistrationCode({ paymentStatus: 'paid', donationDuePaise: 100 }) === false,
+  isEligibleForRegistrationCode({
+    paymentStatus: 'paid',
+    donationDuePaise: 100,
+    attending: true,
+    guestCount: 0,
+  }) === false,
   'unpaid donation blocks eligibility'
 );
 assert(
-  isEligibleForRegistrationCode({ paymentStatus: 'pending', donationDuePaise: 0 }) === false,
+  isEligibleForRegistrationCode({
+    paymentStatus: 'pending',
+    donationDuePaise: 0,
+    attending: true,
+    guestCount: 0,
+  }) === false,
   'unpaid fee is not eligible'
 );
 assert(
-  isEligibleForRegistrationCode({ paymentStatus: 'partial', donationDuePaise: 0 }) === false,
+  isEligibleForRegistrationCode({
+    paymentStatus: 'partial',
+    donationDuePaise: 0,
+    attending: true,
+    guestCount: 0,
+  }) === false,
   'partial fee is not eligible'
 );
 

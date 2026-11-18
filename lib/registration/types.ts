@@ -170,6 +170,8 @@ export interface RegistrationMoney {
     /** Payment status of the fee only. */
     paymentStatus: string | null;
     registrationCode: string | null;
+    registrationQr: string | null;
+    eventFeePaymentLabel: string | null;
 }
 
 export const EMPTY_MONEY: RegistrationMoney = {
@@ -182,6 +184,8 @@ export const EMPTY_MONEY: RegistrationMoney = {
     totalDuePaise: 0,
     paymentStatus: null,
     registrationCode: null,
+    registrationQr: null,
+    eventFeePaymentLabel: null,
 };
 
 function nonNegativeInt(value: unknown): number {
@@ -202,6 +206,11 @@ export function moneyFromRegistration(source: Record<string, unknown>): Registra
         totalDuePaise: nonNegativeInt(source.total_due_paise),
         paymentStatus: typeof source.payment_status === 'string' ? source.payment_status : null,
         registrationCode: typeof source.registration_code === 'string' ? source.registration_code : null,
+        registrationQr: typeof source.registration_qr === 'string' ? source.registration_qr : null,
+        eventFeePaymentLabel:
+            typeof source.event_fee_payment_label === 'string'
+                ? source.event_fee_payment_label
+                : null,
     };
 }
 

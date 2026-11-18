@@ -21,7 +21,6 @@ const required = [
   '/admin/broadcast',
   '/admin/events',
   '/admin/registrations',
-  '/admin/membership',
   '/admin/import',
   '/admin/maintenance',
   '/admin/memories',

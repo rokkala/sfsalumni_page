@@ -39,10 +39,21 @@ export async function POST(request: Request) {
   }
 
   const now = new Date().toISOString();
-  const { error } = await admin
+  const { data: updated, error } = await admin
     .from('event_registrations')
     .update({ checked_in_at: now, checked_in_by: access.actor })
-    .eq('id', result.registration.id);
+    .eq('id', result.registration.id)
+    .is('checked_in_at', null)
+    .select('id');
+  if (!error && (!updated || updated.length === 0)) {
+    const again = await lookupByCode(String(body.code || ''));
+    if (again.ok) {
+      return NextResponse.json({
+        ...again.registration,
+        already_checked_in: true,
+      });
+    }
+  }
   if (error) {
     console.error('gate check-in', error);
     return NextResponse.json(

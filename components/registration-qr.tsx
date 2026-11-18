@@ -2,13 +2,21 @@
 
 import { useEffect, useState } from 'react';
 
-export default function RegistrationQr({ code }: { code: string }) {
+export default function RegistrationQr({
+  code,
+  payload,
+}: {
+  code: string;
+  /** Signed scan value; defaults to code. */
+  payload?: string | null;
+}) {
   const [src, setSrc] = useState('');
+  const scanValue = String(payload || code).trim();
 
   useEffect(() => {
     let cancel = false;
     import('qrcode').then((mod) =>
-      mod.default.toDataURL(code, { margin: 1, width: 220, errorCorrectionLevel: 'M' })
+      mod.default.toDataURL(scanValue, { margin: 2, width: 220, errorCorrectionLevel: 'H' })
     )
       .then((url) => {
         if (!cancel) setSrc(url);
@@ -19,7 +27,7 @@ export default function RegistrationQr({ code }: { code: string }) {
     return () => {
       cancel = true;
     };
-  }, [code]);
+  }, [scanValue]);
 
   if (!src) {
     return <p className="text-body-sm text-on-surface-variant">Preparing QR code…</p>;

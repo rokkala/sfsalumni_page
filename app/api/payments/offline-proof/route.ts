@@ -105,8 +105,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: PENDING_PROOF_ALREADY_MESSAGE }, { status: 400 });
     }
   } else if (sourceType === 'donation') {
-    if (me.member_status !== 'verified') {
-      return NextResponse.json({ error: 'Membership must be verified to donate' }, { status: 403 });
+    if (me.member_status === 'rejected' || me.member_status === 'suspended') {
+      return NextResponse.json({ error: 'Account cannot donate at this time' }, { status: 403 });
     }
     const causeId = String(form.get('causeId') || '').trim();
     if (!UUID_RE.test(causeId)) {

@@ -1,0 +1,26 @@
+{
+  "id": "/gate-app",
+  "name": "SFS Gate check-in",
+  "short_name": "SFS Gate",
+  "description": "Volunteer QR scan and check-in for SFS alumni events.",
+  "start_url": "/gate",
+  "scope": "/gate",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#001628",
+  "theme_color": "#001628",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

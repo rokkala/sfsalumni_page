@@ -368,7 +368,7 @@ export default function AdminRegistrationsInner() {
                                                     <div className="space-y-1 min-w-0">
                                                         {r.bank_reference ? (
                                                             <span
-                                                                className="block truncate text-body-sm"
+                                                                className="block break-all text-body-sm max-w-[14rem] lg:max-w-xs"
                                                                 title={r.bank_reference}
                                                             >
                                                                 {r.bank_reference}

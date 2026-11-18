@@ -53,7 +53,11 @@ export default function MemberGate({
           );
         } else if (data.member_status === 'rejected' || data.member_status === 'suspended') {
           setState('rejected');
-        } else if (mode === 'signed-in' || data.member_status === 'verified') {
+        } else if (
+          mode === 'signed-in' ||
+          data.member_status === 'verified' ||
+          data.member_status === 'pending'
+        ) {
           setState('allowed');
         } else {
           setState('pending');

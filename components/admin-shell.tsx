@@ -84,13 +84,6 @@ const NAV_GROUPS: AdminNavGroup[] = [
         wellClass: 'bg-jubilee-gold-light/80',
       },
       {
-        href: '/admin/membership',
-        label: 'Membership',
-        icon: 'badge',
-        iconClass: 'text-jubilee-gold-deep',
-        wellClass: 'bg-jubilee-gold-light/80',
-      },
-      {
         href: '/admin/import',
         label: 'Import',
         icon: 'upload_file',

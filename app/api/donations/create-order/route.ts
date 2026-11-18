@@ -29,8 +29,8 @@ export async function POST(request: Request) {
   if (me.role === 'admin') {
     return NextResponse.json({ error: 'Committee accounts do not pay here' }, { status: 400 });
   }
-  if (me.member_status !== 'verified') {
-    return NextResponse.json({ error: 'Membership must be verified to donate' }, { status: 403 });
+  if (me.member_status === 'rejected' || me.member_status === 'suspended') {
+    return NextResponse.json({ error: 'Account cannot donate at this time' }, { status: 403 });
   }
 
   const admin = createAdminClient();

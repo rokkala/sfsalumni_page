@@ -105,9 +105,12 @@ export async function repriceEventRegistrations(eventId: string): Promise<number
     // Issuing is idempotent, so this is safe to repeat.
     if (next.payment_status === 'paid') {
       const donation = await loadDonation(admin, row.donation_id);
+      const guestCount = Math.max(0, Number(row.number_of_guests) || 0);
       await issueRegistrationCodeIfEligible(admin, row.id, {
         paymentStatus: 'paid',
         donationDuePaise: donationDuePaise(donation),
+        attending: row.attending !== false,
+        guestCount,
       });
     }
   }

@@ -48,5 +48,7 @@ export function previewMoney(saved: RegistrationMoney, form: FormData): Registra
         totalDuePaise: feeDue + donationDue,
         paymentStatus: saved.paymentStatus,
         registrationCode: saved.registrationCode,
+        registrationQr: saved.registrationQr,
+        eventFeePaymentLabel: saved.eventFeePaymentLabel,
     };
 }

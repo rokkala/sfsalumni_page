@@ -327,7 +327,11 @@ export function RegistrationForm(props: RegistrationFormProps) {
                     {hasSavedReg && (
                         <p className="rounded-xl border border-jubilee-gold-light bg-secondary-container/30 p-4 text-body-sm text-on-secondary-fixed-variant mb-8">
                             Saved registration loaded
-                            {money.paymentStatus ? ` · payment: ${money.paymentStatus}` : ''}
+                            {money.eventFeePaymentLabel
+                                ? ` · event fee: ${money.eventFeePaymentLabel}`
+                                : money.paymentStatus
+                                  ? ` · payment: ${money.paymentStatus}`
+                                  : ''}
                             {verificationPending ? ' · verification: pending' : ''}.
                         </p>
                     )}

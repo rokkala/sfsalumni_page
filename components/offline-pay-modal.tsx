@@ -267,6 +267,10 @@ export default function OfflinePayModal({
       );
       return;
     }
+    if (method !== 'class_representative' && !file) {
+      setError('Upload a photo of your payment confirmation.');
+      return;
+    }
     if (method === 'upi') {
       const utrNorm = normalizeUpiRefNoInput(utr);
       if (!UPI_REF_NO_PATTERN.test(utrNorm)) {
@@ -319,7 +323,9 @@ export default function OfflinePayModal({
       setUtr('');
       setFile(null);
       setThanksMessage(
-        'Thank you for your payment. Your QR will appear once the committee marks it paid.'
+        source.type === 'donation'
+          ? 'Thank you for your donation. The committee will confirm your payment.'
+          : 'Thank you for your payment. Your entry pass unlocks once the committee confirms payment.'
       );
       setPhase('thanks');
     } catch {

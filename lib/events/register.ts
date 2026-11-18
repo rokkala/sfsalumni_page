@@ -20,14 +20,19 @@ import {
   donationDuePaise,
   issueRegistrationCodeIfEligible,
   loadDonation,
+  passEligibilityFromRegistration,
+  visibleRegistrationCode,
   type DonationSnapshot,
 } from '@/lib/events/mark-paid';
 import {
+  clearRegistrationCode,
   isEligibleForRegistrationCode,
   readRegistrationCode,
-  reserveRegistrationCode,
   type RegistrationCodeAdmin,
 } from '@/lib/events/registration-code';
+import { registrationQrPayload } from '@/lib/events/registration-qr-payload';
+import { formatEventFeePaymentLabel } from '@/lib/events/payment-display';
+import { eventFeeNotApplicable, needsVenuePass } from '@/lib/events/venue-attendance';
 import { assertDonationAmountPaise } from '@/lib/donations/validate';
 import {
   MAX_GUESTS,
@@ -271,19 +276,38 @@ export async function getAccountRegistrationForEvent(
       }
     : null;
 
-  let registrationCode = await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id);
-  if (!registrationCode) {
-    registrationCode = await reserveRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id);
+  const guestCountLoad = clampGuestCount(Number(reg.number_of_guests) || 0);
+  const attendingLoad = reg.attending !== false;
+  if (!needsVenuePass(attendingLoad, guestCountLoad)) {
+    await clearRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id);
   }
-  if (!registrationCode) {
-    registrationCode = await issueRegistrationCodeIfEligible(admin, reg.id, {
-      paymentStatus: reg.payment_status,
-      donationDuePaise: donationDue,
-    });
-  }
+  const regSnap: import('@/lib/events/mark-paid').RegistrationSnapshot = {
+    id: reg.id,
+    event_id: reg.event_id,
+    account_id: me.id,
+    attending: attendingLoad,
+    number_of_guests: guestCountLoad,
+    total_cost_paise: feeTotal,
+    amount_paid_paise: feePaid,
+    payment_status: reg.payment_status,
+    donation_id: reg.donation_id,
+    razorpay_order_id: null,
+    razorpay_payment_id: null,
+  };
+  await issueRegistrationCodeIfEligible(admin, reg.id, {
+    ...passEligibilityFromRegistration(regSnap, donationDue),
+    paymentStatus: reg.payment_status,
+  });
+  const registrationCode = visibleRegistrationCode(
+    await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id),
+    regSnap,
+    donationDue
+  );
   const passReady = isEligibleForRegistrationCode({
     paymentStatus: reg.payment_status,
     donationDuePaise: donationDue,
+    attending: attendingLoad,
+    guestCount: guestCountLoad,
   });
 
   return {
@@ -298,6 +322,15 @@ export async function getAccountRegistrationForEvent(
         total_due_paise: passReady ? 0 : feeDue + donationDue,
         committee_confirmed: passReady,
         registration_code: registrationCode,
+        registration_qr: registrationCode
+          ? registrationQrPayload(registrationCode, reg.id)
+          : null,
+        event_fee_payment_label: formatEventFeePaymentLabel({
+          attending: attendingLoad,
+          guestCount: guestCountLoad,
+          totalCostPaise: feeTotal,
+          paymentStatus: reg.payment_status,
+        }),
         pending_offline_proof: pendingProof,
       },
       profile,
@@ -497,13 +530,31 @@ export async function registerAccountForEvent(
   }
   if (!regId) return { status: 500, payload: { error: 'Could not save registration' } };
 
-  let registrationCode = await reserveRegistrationCode(admin as unknown as RegistrationCodeAdmin, regId);
-  if (!registrationCode) {
-    registrationCode = await issueRegistrationCodeIfEligible(admin, regId, {
-      paymentStatus: payment_status,
-      donationDuePaise: donationDue,
-    });
+  if (!needsVenuePass(attending, guestCount)) {
+    await clearRegistrationCode(admin as unknown as RegistrationCodeAdmin, regId);
   }
+  const snap = {
+    id: regId,
+    event_id: eventId,
+    account_id: me.id,
+    attending,
+    number_of_guests: guestCount,
+    total_cost_paise: feeTotal,
+    amount_paid_paise: priorPaid,
+    payment_status,
+    donation_id: donationId,
+    razorpay_order_id: null,
+    razorpay_payment_id: null,
+  } satisfies import('@/lib/events/mark-paid').RegistrationSnapshot;
+  await issueRegistrationCodeIfEligible(admin, regId, {
+    ...passEligibilityFromRegistration(snap, donationDue),
+    paymentStatus: payment_status,
+  });
+  const registrationCode = visibleRegistrationCode(
+    await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, regId),
+    snap,
+    donationDue
+  );
 
   const fullName = String(body.full_name || '').trim() || me.full_name;
   const lastName = String(body.last_name || '').trim();
@@ -574,6 +625,13 @@ export async function registerAccountForEvent(
       total_due_paise: totalDue,
       jubilee_reg_status: jubilee,
       registration_code: registrationCode,
+      registration_qr: registrationCode ? registrationQrPayload(registrationCode, regId) : null,
+      event_fee_payment_label: formatEventFeePaymentLabel({
+        attending,
+        guestCount,
+        totalCostPaise: feeTotal,
+        paymentStatus: payment_status,
+      }),
       has_parking: hasParking,
       two_wheeler_count: twoWheelers,
       four_wheeler_count: fourWheelers,

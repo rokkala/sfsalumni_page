@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto';
 export { normalizeRegistrationCode } from './registration-code-format';
+import { needsVenuePass } from '@/lib/events/venue-attendance';
 
 /** No 0/O or 1/I/L — these are read aloud at the venue gate. */
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -24,12 +25,29 @@ export function shouldIssueRegistrationCode(
   return status === 'paid' && !String(existing || '').trim();
 }
 
-/** Fee paid and linked donation settled — the only gate for issuing a registration code. */
+/** Fee paid, donation settled, and someone is attending — only then issue a venue pass / QR. */
 export function isEligibleForRegistrationCode(input: {
   paymentStatus: string;
   donationDuePaise: number;
+  attending: boolean;
+  guestCount: number;
 }): boolean {
+  if (!needsVenuePass(input.attending, input.guestCount)) return false;
   return input.paymentStatus === 'paid' && input.donationDuePaise === 0;
+}
+
+export function shouldExposeRegistrationCode(
+  code: string | null | undefined,
+  input: {
+    paymentStatus: string;
+    donationDuePaise: number;
+    attending: boolean;
+    guestCount: number;
+  }
+): string | null {
+  if (!code || !String(code).trim()) return null;
+  if (!isEligibleForRegistrationCode(input)) return null;
+  return String(code).trim();
 }
 
 export function missingColumn(error: { code?: string; message?: string } | null): boolean {
@@ -84,7 +102,7 @@ export async function issueMissingPaidCodes(admin: RegistrationCodeAdmin): Promi
   }
 }
 
-/** Reserves SFS-XXXXX at save for UPI bank recon; gate entry still requires payment settled. */
+/** Reserves SFS-XXXXX only when a venue pass will be needed (not donation-only). */
 export async function reserveRegistrationCode(
   admin: RegistrationCodeAdmin,
   registrationId: string,

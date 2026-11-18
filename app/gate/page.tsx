@@ -52,6 +52,12 @@ export default function GateLoginPage() {
       <p className="text-body-sm text-on-surface-variant mt-2">
         Enter the shared gate PIN. This only opens check-in — not full admin tools.
       </p>
+      <p className="text-body-sm text-on-surface-variant mt-3">
+        <Link href="/gate-app" className="text-primary underline font-medium">
+          Install gate check-in app
+        </Link>{' '}
+        on your phone for faster scanning.
+      </p>
 
       {!pinConfigured && (
         <p className="mt-4 rounded-xl border border-error/30 bg-error-container p-4 text-body-sm text-error">

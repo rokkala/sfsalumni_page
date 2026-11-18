@@ -39,6 +39,7 @@ export default function MemberDonatePage() {
   const [onlineCheckoutEnabled, setOnlineCheckoutEnabled] = useState(false);
   const [offlineNote, setOfflineNote] = useState('');
   const [success, setSuccess] = useState<{
+    id?: string;
     amount_paise: number;
     causeTitle: string;
   } | null>(null);
@@ -108,6 +109,7 @@ export default function MemberDonatePage() {
         return false;
       }
       setSuccess({
+        id: typeof verified.donationId === 'string' ? verified.donationId : undefined,
         amount_paise: Number(verified.amount_paise) || opts?.amountPaise || 100,
         causeTitle: opts?.causeTitle || selectedCause?.title || 'Donation',
       });
@@ -238,6 +240,16 @@ export default function MemberDonatePage() {
               Thank you for your support.
             </p>
             <div className="flex flex-wrap gap-3 mt-6">
+              {success.id ? (
+                <a
+                  href={`/api/member/receipt?donationId=${encodeURIComponent(success.id)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border border-outline-variant px-4 py-2.5 text-label-sm uppercase tracking-wider text-primary"
+                >
+                  Download receipt
+                </a>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setSuccess(null)}

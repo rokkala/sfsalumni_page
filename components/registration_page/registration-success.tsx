@@ -41,7 +41,8 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
 
     const isPaidInFull = money.paymentStatus === 'paid' && money.totalDuePaise === 0;
     const isConfirmed = committeeConfirmed || isPaidInFull;
-    const code = money.registrationCode;
+    const code = isConfirmed ? money.registrationCode : null;
+    const qrPayload = isConfirmed ? money.registrationQr : null;
 
     function changeGuestCount(raw: string) {
         const next = Math.min(MAX_GUESTS, Math.max(MIN_GUESTS, parseInt(raw, 10) || 0));
@@ -79,7 +80,7 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
                             <p className="text-label-md text-primary uppercase tracking-wider">Registration ID</p>
                             <p className="mt-2 text-headline-md text-primary tracking-[0.18em] font-bold">{code}</p>
                             <div className="mt-4 flex justify-center">
-                                <RegistrationQr code={code} />
+                                <RegistrationQr code={code} payload={qrPayload} />
                             </div>
                             <p className="mt-3 text-body-sm text-on-surface-variant">Show this QR code at the venue.</p>
                         </div>

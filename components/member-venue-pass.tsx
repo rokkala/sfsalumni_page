@@ -26,6 +26,7 @@ type Registration = {
   total_due_paise?: number;
   committee_confirmed?: boolean;
   registration_code?: string | null;
+  registration_qr?: string | null;
   bank_reference?: string | null;
   pending_offline_proof?: { utr?: string | null; has_screenshot?: boolean } | null;
 };
@@ -222,14 +223,14 @@ export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pa
               </dl>
             )}
 
-            {summary.code ? (
+            {summary.code && confirmed ? (
               <div className="mt-5 rounded-xl border border-outline-variant px-4 py-5 text-center">
                 <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">
                   Show this at the venue
                 </p>
                 <p className="mt-2 text-headline-md text-primary tracking-[0.18em] font-bold">{summary.code}</p>
                 <div className="mt-4 flex justify-center">
-                  <RegistrationQr code={summary.code} />
+                  <RegistrationQr code={summary.code} payload={reg.registration_qr} />
                 </div>
                 {passOnly ? (
                   <p className="mt-4 text-body-sm text-on-surface-variant">Turn brightness up for scanning.</p>
