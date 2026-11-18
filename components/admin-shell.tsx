@@ -152,6 +152,13 @@ const NAV_GROUPS: AdminNavGroup[] = [
         wellClass: 'bg-jubilee-amber/12',
       },
       {
+        href: '/admin/receivables',
+        label: 'Receivables',
+        icon: 'payments',
+        iconClass: 'text-jubilee-amber',
+        wellClass: 'bg-jubilee-amber/12',
+      },
+      {
         href: '/admin/remittance-proofs',
         label: 'Remittance proofs',
         icon: 'fact_check',

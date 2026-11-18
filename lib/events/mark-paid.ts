@@ -9,6 +9,7 @@
 // - Mark unpaid clears payment; SFS code is kept for UPI / bank narration matching.
 // - Applying the same gateway payment id twice changes nothing.
 
+import { applyDonationPayment } from '@/lib/donations/mark-paid';
 import { amountDuePaise, jubileeStatusFromPayment, statusFromAmounts } from '@/lib/events/balance';
 import {
   clearRegistrationCode,
@@ -175,6 +176,35 @@ export function visibleRegistrationCode(
   donationDuePaise: number
 ): string | null {
   return shouldExposeRegistrationCode(code, passEligibilityFromRegistration(reg, donationDuePaise));
+}
+
+async function registrationIdForDonation(
+  admin: AdminClient,
+  donationId: string
+): Promise<string | null> {
+  const { data } = await admin
+    .from('event_registrations')
+    .select('id')
+    .eq('donation_id', donationId)
+    .maybeSingle();
+  return data?.id ? String(data.id) : null;
+}
+
+/** Re-run venue pass eligibility after fee or donation changed in isolation. */
+async function refreshRegistrationEligibility(admin: AdminClient, registrationId: string): Promise<void> {
+  const registration = await loadRegistration(admin, registrationId);
+  if (!registration) return;
+  const donation = await loadDonation(admin, registration.donation_id);
+  const donationDueAfter = donationDuePaise(donation);
+  const total = Math.max(0, Number(registration.total_cost_paise) || 0);
+  const paid = Math.max(0, Number(registration.amount_paid_paise) || 0);
+  const paymentStatus = statusFromAmounts(total, paid);
+  await syncJubileeStatus(admin, registration, paymentStatus);
+  const eligibility = passEligibilityFromRegistration(registration, donationDueAfter);
+  await issueRegistrationCodeIfEligible(admin, registrationId, {
+    ...eligibility,
+    paymentStatus,
+  });
 }
 
 async function syncJubileeStatus(
@@ -362,6 +392,137 @@ export async function applyRegistrationPayment(input: {
   const donationDue = donationDuePaise(await loadDonation(admin, registration.donation_id));
 
   return settle(admin, registration, { paymentPaise: feeDue + donationDue });
+}
+
+/** Admin: settles only the event fee line (linked donation unchanged). */
+export async function applyRegistrationFeePayment(input: {
+  registrationId: string;
+}): Promise<SettleResult> {
+  const admin = createAdminClient();
+  const registration = await loadRegistration(admin, input.registrationId);
+  if (!registration) return { ok: false, status: 404, error: 'Registration not found' };
+  const total = Math.max(0, Number(registration.total_cost_paise) || 0);
+  const feeDue = amountDuePaise(total, registration.amount_paid_paise);
+  if (feeDue < 1) {
+    return { ok: false, status: 400, error: 'Registration fee is already settled' };
+  }
+  return settle(admin, registration, { paymentPaise: feeDue });
+}
+
+/** Admin: clears only the fee line on a registration (donation line unchanged). */
+export async function markRegistrationFeeUnpaid(registrationId: string): Promise<UnpaidResult> {
+  const admin = createAdminClient();
+  const registration = await loadRegistration(admin, registrationId);
+  if (!registration) return { ok: false, status: 404, error: 'Registration not found' };
+
+  const total = Math.max(0, Number(registration.total_cost_paise) || 0);
+  const paid = Math.max(0, Number(registration.amount_paid_paise) || 0);
+  if (paid < 1 && registration.payment_status !== 'paid' && registration.payment_status !== 'partial') {
+    return { ok: false, status: 400, error: 'Registration fee is not marked paid' };
+  }
+  if (total < 1 && paid < 1) {
+    return { ok: false, status: 400, error: 'This registration has no fee line' };
+  }
+
+  const now = new Date().toISOString();
+  const paymentStatus = statusFromAmounts(total, 0);
+  const { error: registrationError } = await admin
+    .from('event_registrations')
+    .update({
+      amount_paid_paise: 0,
+      payment_status: paymentStatus,
+      razorpay_payment_id: null,
+      razorpay_signature: null,
+      updated_at: now,
+    })
+    .eq('id', registration.id);
+  if (registrationError) {
+    console.error('mark fee unpaid registration', registrationError);
+    return { ok: false, status: 500, error: 'Could not update registration fee' };
+  }
+
+  await refreshRegistrationEligibility(admin, registration.id);
+  const registration_code = await readRegistrationCode(
+    admin as unknown as RegistrationCodeAdmin,
+    registration.id
+  );
+  return { ok: true, payment_status: 'pending', amount_paid_paise: 0, registration_code };
+}
+
+/** Admin: mark an event-registration donation line paid and refresh the linked registration. */
+export async function applyRegistrationDonationPayment(input: {
+  donationId: string;
+}): Promise<SettleResult | SettleFailure> {
+  const admin = createAdminClient();
+  const result = await applyDonationPayment({ donationId: input.donationId });
+  if (!result.ok) {
+    return { ok: false, status: result.status || 500, error: result.error || 'Could not mark donation paid' };
+  }
+
+  const registrationId = await registrationIdForDonation(admin, input.donationId);
+  if (registrationId) await refreshRegistrationEligibility(admin, registrationId);
+
+  if (!registrationId) {
+    return {
+      ok: true,
+      payment_status: 'paid',
+      amount_paid_paise: 0,
+      amount_due_paise: 0,
+      donation_due_paise: 0,
+      registration_code: null,
+    };
+  }
+
+  const registration = await loadRegistration(admin, registrationId);
+  if (!registration) {
+    return { ok: false, status: 404, error: 'Registration not found' };
+  }
+  const donation = await loadDonation(admin, registration.donation_id);
+  const donationDueAfter = donationDuePaise(donation);
+  const total = Math.max(0, Number(registration.total_cost_paise) || 0);
+  const paid = Math.max(0, Number(registration.amount_paid_paise) || 0);
+  return {
+    ok: true,
+    payment_status: statusFromAmounts(total, paid),
+    amount_paid_paise: paid,
+    amount_due_paise: amountDuePaise(total, paid) + donationDueAfter,
+    donation_due_paise: donationDueAfter,
+    registration_code: visibleRegistrationCode(
+      await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, registrationId),
+      registration,
+      donationDueAfter
+    ),
+  };
+}
+
+/** Admin: clear a donation line (including gifts bundled on a registration). */
+export async function markDonationUnpaid(donationId: string): Promise<SettleFailure | { ok: true; payment_status: 'pending' }> {
+  const admin = createAdminClient();
+  const donation = await loadDonation(admin, donationId);
+  if (!donation) return { ok: false, status: 404, error: 'Donation not found' };
+  if (donation.payment_status !== 'paid') {
+    return { ok: false, status: 400, error: 'Donation is not marked paid' };
+  }
+
+  const now = new Date().toISOString();
+  const { error } = await admin
+    .from('donations')
+    .update({
+      payment_status: 'pending',
+      razorpay_payment_id: null,
+      razorpay_signature: null,
+      updated_at: now,
+    })
+    .eq('id', donationId);
+  if (error) {
+    console.error('mark donation unpaid', error);
+    return { ok: false, status: 500, error: 'Could not update donation' };
+  }
+
+  const registrationId = await registrationIdForDonation(admin, donationId);
+  if (registrationId) await refreshRegistrationEligibility(admin, registrationId);
+
+  return { ok: true, payment_status: 'pending' };
 }
 
 /** Admin: clears payment on the fee and any linked donation (including fee-free registrations with a donation). */

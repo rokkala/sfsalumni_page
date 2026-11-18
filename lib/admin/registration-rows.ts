@@ -25,8 +25,9 @@ export const REGISTRATION_SELECT = [
     'core_committee_manually_verified',
     'checked_in_at',
     'bank_reference',
+    'donation_id',
     'created_at',
-    'donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status)',
+    'donation:donations!event_registrations_donation_id_fkey(id,amount_paise,payment_status)',
     'event_catalog(title)',
     'alumni_accounts(full_name,email,batch)',
 ].join(',');
@@ -51,8 +52,9 @@ export interface RegistrationDbRow {
     core_committee_manually_verified: boolean | null;
     checked_in_at: string | null;
     bank_reference: string | null;
+    donation_id: string | null;
     created_at: string;
-    donation: DonationRow | DonationRow[] | null;
+    donation: (DonationRow & { id?: string }) | (DonationRow & { id?: string })[] | null;
     event_catalog: { title: string } | { title: string }[] | null;
     alumni_accounts: AccountEmbed | AccountEmbed[] | null;
 }
