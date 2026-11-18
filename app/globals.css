@@ -64,6 +64,8 @@
   --color-jubilee-gold-light: #efe2cc;
   --color-academic-teal: #3d6b5c;
   --color-navy-subtle: #57534e;
+  --color-dark-blue: #1e3a8a;
+  --color-on-dark-blue: #ffffff;
 
   --font-serif: var(--font-eb-garamond), Georgia, serif;
   --font-sans: var(--font-manrope), system-ui, sans-serif;

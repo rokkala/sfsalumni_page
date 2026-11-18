@@ -676,13 +676,13 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                     type="button"
                                     onClick={() => void openPayModal()}
                                     disabled={!canOpenPay}
-                                    className="flex-1 py-3 rounded-lg border border-primary/30 bg-surface text-primary text-label-md uppercase tracking-wider font-bold hover:bg-surface-container-low disabled:bg-surface-container disabled:text-on-surface-variant disabled:border-outline-variant transition-all focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                    className="flex-1 py-3 rounded-lg bg-dark-blue text-on-dark-blue text-label-md uppercase tracking-wider font-bold hover:opacity-90 disabled:opacity-50 transition-all focus:outline-none focus:ring-2 focus:ring-dark-blue/40"
                                 >
                                     {payPreparing
                                         ? 'Preparing…'
                                         : pendingProof
                                           ? 'View payment proof'
-                                          : 'Submit payment proof'}
+                                          : 'Pay Via Alternative Method'}
                                 </button>
                             )}
                         </div>

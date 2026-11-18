@@ -434,7 +434,7 @@ export default function OfflinePayModal({
             <div className="sticky top-0 flex items-start justify-between gap-3 bg-surface border-b border-outline-variant px-5 py-4">
               <div>
                 <h2 id={titleId} className="text-lg font-semibold text-on-surface">
-                  Submit payment proof
+                  Pay Via Alternative Method
                 </h2>
                 <p className="text-sm text-on-surface-variant mt-1">
                   Pay the amount below to <strong>{account.label}</strong> using your chosen method,

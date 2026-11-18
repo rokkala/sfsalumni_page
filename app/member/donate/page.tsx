@@ -404,9 +404,9 @@ export default function MemberDonatePage() {
               <button
                 type="submit"
                 disabled={!causes?.length || amountPaise() == null || !bankAccount}
-                className="w-full rounded-lg bg-primary text-on-primary px-4 py-3 text-label-sm font-bold uppercase tracking-wider disabled:opacity-50"
+                className="w-full rounded-lg bg-dark-blue text-on-dark-blue px-4 py-3 text-label-sm font-bold uppercase tracking-wider hover:opacity-90 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-dark-blue/40"
               >
-                Submit payment proof
+                Pay Via Alternative Method
               </button>
             </div>
             <p className="text-body-sm text-on-surface-variant text-center">
