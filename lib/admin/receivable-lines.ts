@@ -28,6 +28,8 @@ export type ReceivableLine = {
   recon_hint: string;
   proof_id: string | null;
   bank_reference: string | null;
+  /** Cashfree PG order id stored in razorpay_order_id. */
+  cashfree_order_id: string | null;
 };
 
 export function parseReceivableLineKey(lineKey: string): { kind: 'fee' | 'donation'; id: string } | null {
@@ -59,6 +61,8 @@ function feeLineFromRegistration(
   });
   const settled = Math.min(total, paid);
   const paidLine = paid >= total;
+  const cashfreeOrderId = String(row.razorpay_order_id || '').trim() || null;
+  const cashfreeDue = due > 0 && cashfreeOrderId && !proof?.proof_id;
   return {
     line_key: `fee:${row.id}`,
     kind: 'registration_fee',
@@ -79,16 +83,21 @@ function feeLineFromRegistration(
         ? bank_reference
           ? 'Bank / UPI'
           : 'Cashfree'
-        : bank_reference
-          ? 'Bank / UPI'
-          : 'Awaiting payment',
+        : cashfreeOrderId
+          ? 'Cashfree'
+          : bank_reference
+            ? 'Bank / UPI'
+            : 'Awaiting payment',
     recon_hint: proof?.proof_id
       ? 'Pending remittance proof — review on Remittance proofs.'
-      : bank_reference
-        ? 'Match bank reference on the statement.'
-        : 'Mark paid after Cashfree or offline confirmation.',
+      : cashfreeDue
+        ? 'Cashfree order on file — auto-matched on refresh when PG shows paid.'
+        : bank_reference
+          ? 'Match bank reference on the statement.'
+          : 'Mark paid after Cashfree or offline confirmation.',
     proof_id: proof?.proof_id ?? null,
     bank_reference,
+    cashfree_order_id: cashfreeOrderId,
   };
 }
 
@@ -96,7 +105,8 @@ function giftLineFromRegistration(
   row: RegistrationDbRow,
   account: { full_name: string; email: string } | null,
   eventTitle: string,
-  proofByDonation: Map<string, { id: string; status: string }>
+  proofByDonation: Map<string, { id: string; status: string }>,
+  proofByReg: Map<string, { utr: string | null; proof_id: string | null }>
 ): ReceivableLine | null {
   const donation = one(row.donation);
   const donationId = row.donation_id || donation?.id || null;
@@ -107,6 +117,13 @@ function giftLineFromRegistration(
   const settled = status === 'paid' ? amount : 0;
   const due = status === 'paid' ? 0 : amount;
   const proof = proofByDonation.get(donationId);
+  const regProof = proofByReg.get(row.id);
+  const linkedProofId =
+    proof?.status === 'pending'
+      ? proof.id
+      : regProof?.proof_id
+        ? regProof.proof_id
+        : null;
   const recon = deriveDonationReconMeta({
     payment_status: status,
     event_id: row.event_id,
@@ -114,6 +131,16 @@ function giftLineFromRegistration(
     razorpay_payment_id: null,
     proof: proof ? { id: proof.id, status: proof.status } : null,
   });
+  const regCashfree = String(row.razorpay_order_id || '').trim();
+  const donCashfree = String(donation?.razorpay_order_id || '').trim();
+  const cashfreeOrderId = donCashfree || regCashfree || null;
+  const cashfreeDue = due > 0 && cashfreeOrderId && !linkedProofId;
+  const reconHint =
+    linkedProofId && status !== 'paid'
+      ? 'Same registration proof covers fee + gift — approve on either line.'
+      : cashfreeDue
+        ? 'Cashfree order on file — auto-matched on refresh when PG shows paid.'
+        : recon.recon_hint;
   return {
     line_key: `donation:${donationId}`,
     kind: 'registration_gift',
@@ -130,9 +157,10 @@ function giftLineFromRegistration(
     donation_id: donationId,
     created_at: row.created_at,
     channel_label: recon.channel_label,
-    recon_hint: recon.recon_hint,
-    proof_id: proof?.status === 'pending' ? proof.id : null,
+    recon_hint: reconHint,
+    proof_id: linkedProofId,
     bank_reference: null,
+    cashfree_order_id: cashfreeOrderId,
   };
 }
 
@@ -182,7 +210,7 @@ export async function loadReceivableLines(filters: {
   let causeQuery = admin
     .from('donations')
     .select(
-      'id,amount_paise,payment_status,created_at,event_id,account_id,donation_causes(title),alumni_accounts(full_name,email)'
+      'id,amount_paise,payment_status,razorpay_order_id,created_at,event_id,account_id,donation_causes(title),alumni_accounts(full_name,email)'
     )
     .is('event_id', null)
     .order('created_at', { ascending: false })
@@ -220,7 +248,7 @@ export async function loadReceivableLines(filters: {
       proofByReg
     );
     if (fee) lines.push(fee);
-    const gift = giftLineFromRegistration(row, account, eventTitle, proofByDonation);
+    const gift = giftLineFromRegistration(row, account, eventTitle, proofByDonation, proofByReg);
     if (gift) lines.push(gift);
   }
 
@@ -235,13 +263,15 @@ export async function loadReceivableLines(filters: {
     if (amount < 1) continue;
     const status = String(row.payment_status || 'pending');
     const proof = proofByDonation.get(row.id);
+    const cfOrder = String(row.razorpay_order_id || '').trim() || null;
     const recon = deriveDonationReconMeta({
       payment_status: status,
       event_id: row.event_id,
-      razorpay_order_id: null,
+      razorpay_order_id: cfOrder,
       razorpay_payment_id: null,
       proof: proof ? { id: proof.id, status: proof.status } : null,
     });
+    const cashfreeDue = status !== 'paid' && cfOrder && !(proof?.status === 'pending');
     lines.push({
       line_key: `donation:${row.id}`,
       kind: 'cause_donation',
@@ -258,9 +288,12 @@ export async function loadReceivableLines(filters: {
       donation_id: row.id,
       created_at: row.created_at,
       channel_label: recon.channel_label,
-      recon_hint: recon.recon_hint,
+      recon_hint: cashfreeDue
+        ? 'Cashfree order on file — auto-matched on refresh when PG shows paid.'
+        : recon.recon_hint,
       proof_id: proof?.status === 'pending' ? proof.id : null,
       bank_reference: null,
+      cashfree_order_id: cfOrder,
     });
   }
 

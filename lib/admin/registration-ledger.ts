@@ -11,7 +11,12 @@
 // - "Awaiting verification" means money is still due and a bank reference was entered, so the
 //   committee has something to check against the bank statement.
 
-export type DonationRow = { amount_paise: number; payment_status: string };
+export type DonationRow = {
+  amount_paise: number;
+  payment_status: string;
+  id?: string;
+  razorpay_order_id?: string | null;
+};
 
 export type RegistrationState = 'cancelled' | 'confirmed' | 'awaiting_verification' | 'partial' | 'unpaid';
 

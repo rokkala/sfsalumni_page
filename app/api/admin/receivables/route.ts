@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { loadReceivableLines } from '@/lib/admin/receivable-lines';
+import { syncOpenCashfreeFromLines } from '@/lib/admin/reconcile-cashfree';
 import { requireVerifiedAdmin } from '@/lib/auth/admin-guard';
 import { refreshRegistrations } from '@/lib/admin/registration-rows';
 
@@ -20,7 +21,25 @@ export async function GET(request: Request) {
 
   await refreshRegistrations(eventId);
 
-  const { lines, error } = await loadReceivableLines({ eventId, status, q });
+  const cashfreeSyncRequested = url.searchParams.get('cashfree_sync') === '1';
+
+  let lines: Awaited<ReturnType<typeof loadReceivableLines>>['lines'];
+  let error: string | null;
+  let cashfree_sync: Awaited<ReturnType<typeof syncOpenCashfreeFromLines>> | undefined;
+
+  if (cashfreeSyncRequested) {
+    const first = await loadReceivableLines({ eventId, status, q });
+    if (first.error) return NextResponse.json({ error: first.error }, { status: 500 });
+    cashfree_sync = await syncOpenCashfreeFromLines(first.lines);
+    const reloaded = await loadReceivableLines({ eventId, status, q });
+    lines = reloaded.lines;
+    error = reloaded.error;
+  } else {
+    const loaded = await loadReceivableLines({ eventId, status, q });
+    lines = loaded.lines;
+    error = loaded.error;
+  }
+
   if (error) return NextResponse.json({ error }, { status: 500 });
 
   const summary = {
@@ -29,5 +48,5 @@ export async function GET(request: Request) {
     settled_paise: lines.reduce((s, l) => s + l.settled_paise, 0),
   };
 
-  return NextResponse.json({ lines, summary });
+  return NextResponse.json({ lines, summary, cashfree_sync });
 }

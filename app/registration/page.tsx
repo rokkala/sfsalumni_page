@@ -45,12 +45,15 @@ import {
 import { RegistrationSuccess } from '@/components/registration_page/registration-success';
 import { previewMoney } from '@/lib/registration/preview';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
+import {
+    CASHFREE_CHECKOUT_CANCELLED,
+    confirmRegistrationCashfreePayment,
+} from '@/lib/payments/cashfree-confirm-client';
 import { openCashfreeCheckout } from '@/lib/payments/checkout-client';
 import { pendingProofDisplay } from '@/lib/payments/offline-proof';
 import {
     toCheckoutOrder,
     type OrderApiResponse,
-    type VerifyResponse,
 } from '@/lib/registration/payment-types';
 import {
     choicesFingerprint,
@@ -757,27 +760,23 @@ function RegistrationPageInner() {
                 mode: order.mode,
                 description: order.description,
             });
-            if (!checkout) return;
+            if (!checkout) {
+                setError(CASHFREE_CHECKOUT_CANCELLED);
+                return;
+            }
             if ('failed' in checkout) {
                 setError(checkout.message);
                 return;
             }
-            const verifyRes = await fetch('/api/payments/verify', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({
-                    registrationId: prep.registrationId,
-                    order_id: checkout.order_id,
-                }),
+            const confirmed = await confirmRegistrationCashfreePayment({
+                registrationId: prep.registrationId,
+                orderId: checkout.order_id,
             });
-            const verified = (await verifyRes.json().catch(() => ({}))) as VerifyResponse;
-            if (!verifyRes.ok) {
-                setError(
-                    verified.error ||
-                        'Payment could not be confirmed yet. If money was debited, contact the committee.'
-                );
+            if (!confirmed.ok) {
+                setError(confirmed.message);
                 return;
             }
+            const verified = confirmed.verified;
             setSaveMessage(
                 verified.registration_code
                     ? `Payment received. Your registration code is ${verified.registration_code}.`
@@ -822,6 +821,59 @@ function RegistrationPageInner() {
     const [payingOnline, setPayingOnline] = useState(false);
     const [onlineCheckoutEnabled, setOnlineCheckoutEnabled] = useState(false);
     const busy = saving || payingOnline;
+
+    /** Cashfree redirect returnUrl (?cf_order_id=) — same verify path as modal checkout. */
+    useEffect(() => {
+        const orderId = searchParams.get('cf_order_id')?.trim();
+        if (!orderId || !event?.id || gate !== 'ok' || !regHydrated) return;
+
+        let active = true;
+        setPayingOnline(true);
+        setError('');
+        void (async () => {
+            let regId = registrationId;
+            if (!regId) {
+                const loaded = await loadSavedRegistration(event.id, false);
+                regId = loaded?.id || null;
+            }
+            if (!regId) {
+                if (active) {
+                    setError('Sign in and save your registration, then refresh to confirm payment.');
+                    setPayingOnline(false);
+                }
+                return;
+            }
+
+            const confirmed = await confirmRegistrationCashfreePayment({
+                registrationId: regId,
+                orderId,
+            });
+            if (!active) return;
+            setPayingOnline(false);
+
+            if (confirmed.ok) {
+                const verified = confirmed.verified;
+                setSaveMessage(
+                    verified.registration_code
+                        ? `Payment received. Your registration code is ${verified.registration_code}.`
+                        : 'Payment received.'
+                );
+                await loadSavedRegistration(event.id, false);
+                if (typeof window !== 'undefined') {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('cf_order_id');
+                    window.history.replaceState({}, '', url.pathname + url.search);
+                }
+                return;
+            }
+            setError(confirmed.message);
+        })();
+
+        return () => {
+            active = false;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams, event?.id, gate, regHydrated, registrationId]);
     const formMode: RegistrationFormMode = hasSavedReg
         ? money.totalDuePaise > 0
             ? 'pay'

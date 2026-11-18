@@ -6,6 +6,10 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import MemberGate from '@/components/member-gate';
 import AmountWithFx from '@/components/amount-with-fx';
 import OfflinePayModal from '@/components/offline-pay-modal';
+import {
+  CASHFREE_CHECKOUT_CANCELLED,
+  confirmDonationCashfreePayment,
+} from '@/lib/payments/cashfree-confirm-client';
 import { openCashfreeCheckout } from '@/lib/payments/checkout-client';
 import PortalShell from '@/components/portal-shell';
 import {
@@ -92,25 +96,17 @@ export default function MemberDonatePage() {
       orderId: string,
       opts?: { donationId?: string; amountPaise?: number; causeTitle?: string }
     ) => {
-      const verifyRes = await fetch('/api/donations/verify', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          ...(opts?.donationId ? { donationId: opts.donationId } : {}),
-          order_id: orderId,
-        }),
+      const confirmed = await confirmDonationCashfreePayment({
+        orderId,
+        donationId: opts?.donationId,
       });
-      const verified = await verifyRes.json().catch(() => ({}));
-      if (!verifyRes.ok) {
-        setError(
-          verified.error ||
-            'Payment could not be confirmed yet. If money was debited, contact the committee.'
-        );
+      if (!confirmed.ok) {
+        setError(confirmed.message);
         return false;
       }
       setSuccess({
-        id: typeof verified.donationId === 'string' ? verified.donationId : undefined,
-        amount_paise: Number(verified.amount_paise) || opts?.amountPaise || 100,
+        id: opts?.donationId,
+        amount_paise: Number(confirmed.amount_paise) || opts?.amountPaise || 100,
         causeTitle: opts?.causeTitle || selectedCause?.title || 'Donation',
       });
       setError('');
@@ -185,7 +181,10 @@ export default function MemberDonatePage() {
         mode: payload.checkoutMode === 'production' ? 'production' : 'sandbox',
         description: payload.description,
       });
-      if (!checkout) return;
+      if (!checkout) {
+        setError(CASHFREE_CHECKOUT_CANCELLED);
+        return;
+      }
       if ('failed' in checkout) {
         setError(checkout.message);
         return;

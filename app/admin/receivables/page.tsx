@@ -29,16 +29,23 @@ export default function AdminReceivablesPage() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silentCashfreeMessage?: boolean }) => {
     const params = new URLSearchParams();
     if (eventId) params.set('event_id', eventId);
     if (status !== 'all') params.set('status', status);
     if (q.trim()) params.set('q', q.trim());
+    params.set('cashfree_sync', '1');
     const res = await fetch(`/api/admin/receivables?${params}`, { cache: 'no-store' });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(payload.error || 'Could not load receivables');
     setLines(payload.lines || []);
     setSummary(payload.summary || { line_count: 0, due_paise: 0, settled_paise: 0 });
+    const sync = payload.cashfree_sync as
+      | { matched?: number; pending?: number; attempted?: number }
+      | undefined;
+    if (!opts?.silentCashfreeMessage && sync && (sync.matched || 0) > 0) {
+      setMessage(`Cashfree auto-match: ${sync.matched} line(s) marked paid.`);
+    }
   }, [eventId, status, q]);
 
   useEffect(() => {
@@ -77,16 +84,63 @@ export default function AdminReceivablesPage() {
     }
   }
 
+  /** Approve linked offline proof — applies full registration/donation settlement (same as Remittance proofs). */
+  async function reconcileFromProof(line: ReceivableLine) {
+    if (!line.proof_id) return;
+    setBusy(line.line_key);
+    setMessage('');
+    try {
+      const res = await fetch(`/api/admin/offline-proofs/${encodeURIComponent(line.proof_id)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'approved', adminNote: 'Receivables — proof approved' }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMessage(payload.error || 'Could not approve proof');
+        return;
+      }
+      setMessage(
+        line.kind === 'registration_fee'
+          ? 'Proof approved — registration fee and linked gift (if any) marked paid.'
+          : 'Proof approved — donation marked paid.'
+      );
+      await load({ silentCashfreeMessage: true });
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function matchCashfreeLine(line: ReceivableLine) {
+    if (!line.cashfree_order_id) return;
+    setBusy(line.line_key);
+    setMessage('');
+    try {
+      const res = await fetch('/api/admin/receivables/cashfree-sync', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ line_key: line.line_key }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMessage(payload.error || 'Cashfree match failed');
+        return;
+      }
+      setMessage('Cashfree payment applied — line marked paid.');
+      await load({ silentCashfreeMessage: true });
+    } finally {
+      setBusy('');
+    }
+  }
+
   return (
     <AdminShell title="Receivables">
       <p className="text-body-sm text-on-surface-variant mb-4 max-w-3xl">
         Every rupee as its own line — registration fees, gifts at checkout, and standalone cause
-        donations. Reconcile each line on its own with <strong className="font-semibold text-on-surface">Mark paid</strong>{' '}
-        / <strong className="font-semibold text-on-surface">Mark unpaid</strong>. Offline proofs stay on{' '}
-        <Link href="/admin/remittance-proofs" className="text-primary underline font-medium">
-          Remittance proofs
-        </Link>
-        .
+        donations. <strong className="font-semibold text-on-surface">Cashfree</strong> lines with an order id are
+        polled on each refresh and marked paid when the PG shows PAID (webhook backstop).{' '}
+        <strong className="font-semibold text-on-surface">Approve proof &amp; mark paid</strong> is for Bank / UPI.
+        Bank statement matching comes later.
       </p>
 
       {error ? (
@@ -199,6 +253,11 @@ export default function AdminReceivablesPage() {
                     <td className="px-3 py-3 align-top capitalize">{line.payment_status}</td>
                     <td className="px-3 py-3 align-top max-w-xs">
                       <p className="text-label-sm">{line.recon_hint}</p>
+                      {line.cashfree_order_id ? (
+                        <p className="text-label-sm text-on-surface-variant mt-1 break-all">
+                          Cashfree order: {line.cashfree_order_id}
+                        </p>
+                      ) : null}
                       {line.bank_reference ? (
                         <p className="text-label-sm text-on-surface-variant mt-1">
                           Ref: {line.bank_reference}
@@ -215,7 +274,27 @@ export default function AdminReceivablesPage() {
                     </td>
                     <td className="px-3 py-3 align-top">
                       <div className="flex flex-wrap gap-2">
-                        {canMarkPaid ? (
+                        {line.cashfree_order_id && line.due_paise > 0 && !line.proof_id ? (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            className={BUTTON_PRIMARY}
+                            onClick={() => void matchCashfreeLine(line)}
+                          >
+                            Match Cashfree
+                          </button>
+                        ) : null}
+                        {line.proof_id && line.due_paise > 0 ? (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            className={BUTTON_PRIMARY}
+                            onClick={() => void reconcileFromProof(line)}
+                          >
+                            Approve proof &amp; mark paid
+                          </button>
+                        ) : null}
+                        {canMarkPaid && !line.proof_id ? (
                           <button
                             type="button"
                             disabled={isBusy}
@@ -223,6 +302,16 @@ export default function AdminReceivablesPage() {
                             onClick={() => void patchLine(line, 'paid')}
                           >
                             Mark paid
+                          </button>
+                        ) : null}
+                        {canMarkPaid && line.proof_id ? (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            className={BUTTON_OUTLINE}
+                            onClick={() => void patchLine(line, 'paid')}
+                          >
+                            Mark paid only
                           </button>
                         ) : null}
                         {canMarkUnpaid ? (
