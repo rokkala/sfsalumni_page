@@ -66,6 +66,12 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
+function offlineThanksFallback(source: Props['source']): string {
+  return source.type === 'donation'
+    ? 'Thank you for your donation. The committee will confirm your payment.'
+    : 'Thank you for your payment. Your entry pass unlocks once the committee confirms payment.';
+}
+
 export default function OfflinePayModal({
   open,
   onClose,
@@ -191,9 +197,7 @@ export default function OfflinePayModal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (phase === 'thanks') {
-        const msg =
-          thanksMessage ||
-          'Thank you. Your payment is pending confirmation. Your QR will appear once the committee marks it paid.';
+        const msg = thanksMessage || offlineThanksFallback(source);
         onSubmitted?.(msg);
         setPhase('pay');
         setThanksMessage('');
@@ -204,7 +208,7 @@ export default function OfflinePayModal({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, busy, phase, thanksMessage, onSubmitted, onClose]);
+  }, [open, busy, phase, thanksMessage, onSubmitted, onClose, source]);
 
   useEffect(() => {
     if (!open || !upiUri || proofLocked) {
@@ -236,9 +240,7 @@ export default function OfflinePayModal({
   if (!open || !mounted) return null;
 
   function finishThanks() {
-    const msg =
-      thanksMessage ||
-      'Thank you. Your payment is pending confirmation. Your QR will appear once the committee marks it paid.';
+    const msg = thanksMessage || offlineThanksFallback(source);
     onSubmitted?.(msg);
     setPhase('pay');
     setThanksMessage('');
@@ -370,10 +372,7 @@ export default function OfflinePayModal({
               Thank you
             </h2>
             <p className="text-sm text-on-surface-variant">
-              Thank you for your payment. The committee will confirm the remittance.
-            </p>
-            <p className="text-sm text-on-surface font-medium">
-              Your QR will appear once they mark it paid.
+              {thanksMessage || offlineThanksFallback(source)}
             </p>
             <button
               ref={closeRef}
@@ -412,10 +411,16 @@ export default function OfflinePayModal({
             {existingProof?.hasScreenshot ? (
               <p className="text-sm text-on-surface-variant">Screenshot is on file.</p>
             ) : null}
-            <p className="text-sm text-on-surface-variant">
-              Your QR will appear once the committee marks this payment paid. You can update
-              details after they review it.
-            </p>
+            {source.type === 'registration' ? (
+              <p className="text-sm text-on-surface-variant">
+                Your entry pass QR will appear once the committee marks this payment paid. You can
+                update details after they review it.
+              </p>
+            ) : (
+              <p className="text-sm text-on-surface-variant">
+                The committee will confirm your donation after they review your proof.
+              </p>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -558,8 +563,9 @@ export default function OfflinePayModal({
                       </p>
                       <p className="text-sm break-all tabular-nums text-on-surface mt-1">{upiTrShort}</p>
                       <p className="text-xs text-on-surface-variant mt-1">
-                        Put this in your bank narration for committee recon. Your pass works at the gate
-                        after payment is confirmed.
+                        {source.type === 'donation'
+                          ? 'Put this in your bank narration so the committee can match your gift.'
+                          : 'Put this in your bank narration for committee recon. Your pass works at the gate after payment is confirmed.'}
                       </p>
                       <button
                         type="button"
