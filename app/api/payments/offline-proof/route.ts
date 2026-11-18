@@ -17,6 +17,8 @@ import {
   PAYMENT_PROOFS_BUCKET,
   paymentProofObjectPath,
 } from '@/lib/payments/proof-storage';
+import { feeDuePaiseFromRegistrationRow } from '@/lib/events/registration-due';
+import { repriceEventRegistrations } from '@/lib/events/reprice';
 import { createAdminClient } from '@/lib/supabase-admin';
 
 export const dynamic = 'force-dynamic';
@@ -74,17 +76,32 @@ export async function POST(request: Request) {
     const { data: reg, error: regErr } = await admin
       .from('event_registrations')
       .select(
-        'id,account_id,total_cost_paise,amount_paid_paise,payment_status,donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status)'
+        'id,account_id,event_id,attending,lunch,number_of_guests,guests_eating,total_cost_paise,amount_paid_paise,payment_status,donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status)'
       )
       .eq('id', registrationId)
       .maybeSingle();
     if (regErr || !reg || reg.account_id !== me.id) {
       return NextResponse.json({ error: 'Registration not found' }, { status: 404 });
     }
-    const total = Math.max(0, Number(reg.total_cost_paise) || 0);
-    const paid = Math.max(0, Number(reg.amount_paid_paise) || 0);
-    const feeDue = Math.max(0, total - paid);
-    const donationRow = Array.isArray(reg.donation) ? reg.donation[0] : reg.donation;
+    const eventId = String(reg.event_id || '').trim();
+    if (eventId) await repriceEventRegistrations(eventId);
+    const { data: repricedRow } = await admin
+      .from('event_registrations')
+      .select(
+        'attending,lunch,number_of_guests,guests_eating,amount_paid_paise,total_cost_paise,payment_status,donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status)'
+      )
+      .eq('id', registrationId)
+      .maybeSingle();
+    const live = repricedRow || reg;
+    const feeDue = feeDuePaiseFromRegistrationRow({
+      attending: live.attending === true,
+      lunch: live.lunch !== false,
+      number_of_guests: live.number_of_guests,
+      guests_eating: live.guests_eating,
+      batch: me.batch,
+      amount_paid_paise: live.amount_paid_paise,
+    });
+    const donationRow = Array.isArray(live.donation) ? live.donation[0] : live.donation;
     const donationStatus = donationRow?.payment_status ?? null;
     const donationAmount = Math.max(0, Number(donationRow?.amount_paise) || 0);
     const donationDue =

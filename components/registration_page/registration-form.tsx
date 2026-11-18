@@ -439,6 +439,17 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                     onChange={changeAttending}
                                     disabled={choicesLocked}
                                 />
+                                {!formData.attending && guestCount === 0 ? (
+                                    <p className="text-body-sm text-on-surface-variant rounded-lg bg-surface-container-low px-4 py-3">
+                                        You chose not to attend and have no guests — only your jubilee
+                                        gift is due (no event registration fee or entry pass).
+                                    </p>
+                                ) : !formData.attending && guestCount > 0 ? (
+                                    <p className="text-body-sm text-on-surface-variant rounded-lg bg-surface-container-low px-4 py-3">
+                                        You are not attending, but each guest still pays the event fee (
+                                        {feeLabel} per person). Set guests to 0 if this is a gift only.
+                                    </p>
+                                ) : null}
 
                                 <div className="flex flex-col">
                                     <label htmlFor="guest_count" className="text-label-md text-primary mb-2 uppercase tracking-wider">

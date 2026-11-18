@@ -277,7 +277,7 @@ export async function getAccountRegistrationForEvent(
     : null;
 
   const guestCountLoad = clampGuestCount(Number(reg.number_of_guests) || 0);
-  const attendingLoad = reg.attending !== false;
+  const attendingLoad = reg.attending === true;
   if (!needsVenuePass(attendingLoad, guestCountLoad)) {
     await clearRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id);
   }
@@ -372,7 +372,7 @@ export async function registerAccountForEvent(
     return { status: 400, payload: { error: `You can register up to ${MAX_GUESTS} guests` } };
   }
   const guestCount = clampGuestCount(requestedGuests);
-  const attending = body.attending !== false;
+  const attending = body.attending === true;
 
   // Donation intent (checked before donate-only save when not attending).
   let intendedDonationPaise = 0;

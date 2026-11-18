@@ -304,6 +304,20 @@ if (venuePassPaymentCue({ confirmed: true, dueLabel: 'Due ₹0', pendingOfflineP
   throw new Error('home confirmed hides cue');
 }
 
+const giftAwaiting = venuePassPaymentCue({
+  confirmed: false,
+  dueLabel: 'Gift ₹10.00',
+  pendingOfflineProof: true,
+  donationOnly: true,
+});
+if (
+  !giftAwaiting ||
+  giftAwaiting.ctaLabel !== 'View gift details' ||
+  giftAwaiting.message.includes('entry pass')
+) {
+  throw new Error('donation-only awaiting cue');
+}
+
 if (isUpiEligible(UPI_MIN_TOTAL_PAISE - 1)) throw new Error('upi min edge low');
 if (!isUpiEligible(UPI_MIN_TOTAL_PAISE)) throw new Error('upi min edge high');
 

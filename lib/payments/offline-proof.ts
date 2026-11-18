@@ -46,6 +46,8 @@ export function venuePassPaymentCue(input: {
   dueLabel: string;
   pendingOfflineProof: boolean;
   bankReference?: string | null;
+  /** Not attending and no guests — only a jubilee gift, no entry pass. */
+  donationOnly?: boolean;
 }): {
   awaiting: boolean;
   badge: string;
@@ -59,15 +61,18 @@ export function venuePassPaymentCue(input: {
     return {
       awaiting: true,
       badge: 'Awaiting confirmation',
-      message:
-        'Your payment is with the committee. The entry pass QR unlocks once they confirm.',
-      ctaLabel: 'View registration',
+      message: input.donationOnly
+        ? 'Your gift is with the committee. They will confirm when it is matched to your payment.'
+        : 'Your payment is with the committee. The entry pass QR unlocks once they confirm.',
+      ctaLabel: input.donationOnly ? 'View gift details' : 'View registration',
     };
   }
   return {
     awaiting: false,
     badge: input.dueLabel,
-    message: 'Complete payment to unlock your entry pass QR.',
+    message: input.donationOnly
+      ? 'Complete payment for your jubilee gift.'
+      : 'Complete payment to unlock your entry pass QR.',
     ctaLabel: pendingPaymentMemberLabel(false),
   };
 }

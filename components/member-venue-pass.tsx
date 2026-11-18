@@ -9,7 +9,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import RegistrationQr from '@/components/registration-qr';
-import { formatCostForDisplay } from '@/lib/registration/registration';
+import { clampGuestCount, formatCostForDisplay } from '@/lib/registration/registration';
+import { eventFeeNotApplicable } from '@/lib/events/venue-attendance';
 import { registrationPath } from '@/lib/events/choose-event';
 import { venuePassSummary } from '@/lib/events/venue-pass';
 import type { EventCatalog } from '@/lib/events/types';
@@ -158,15 +159,20 @@ export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pa
         const duePaise = Math.max(0, Number(reg.total_due_paise) || 0);
         // Confirmed by the committee, or nothing left to pay. Both mean the pass is valid.
         const confirmed = reg.committee_confirmed === true || (reg.payment_status === 'paid' && duePaise === 0);
+        const guestCount = clampGuestCount(Number(reg.number_of_guests) || 0);
+        const alumnusAttending = reg.attending === true;
+        const donationOnly = eventFeeNotApplicable(alumnusAttending, guestCount);
+
         const paymentCue = venuePassPaymentCue({
           confirmed,
-          dueLabel: `Due ${formatCostForDisplay(duePaise)}`,
+          dueLabel: donationOnly ? `Gift ${formatCostForDisplay(duePaise)}` : `Due ${formatCostForDisplay(duePaise)}`,
           pendingOfflineProof: Boolean(reg.pending_offline_proof),
           bankReference: reg.bank_reference,
+          donationOnly,
         });
 
         const summary = venuePassSummary({
-          attending: reg.attending !== false,
+          attending: alumnusAttending,
           lunch: reg.lunch !== false,
           food_preference: reg.food_preference,
           number_of_guests: reg.number_of_guests,
@@ -189,7 +195,11 @@ export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pa
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-label-sm uppercase tracking-[0.16em] text-jubilee-gold-deep font-bold">
-                {confirmed ? 'Entry pass' : 'Registration'}
+                {donationOnly && !confirmed
+                  ? 'Jubilee gift'
+                  : confirmed
+                    ? 'Entry pass'
+                    : 'Registration'}
               </p>
               <p
                 className={`rounded-full px-3 py-1 text-label-sm font-bold ${
