@@ -26,6 +26,7 @@ import {
 } from '@/lib/registration/registration';
 import { SECTIONS } from '@/lib/registration/registration-fields';
 import type { EventCatalog } from '@/lib/events/types';
+import { eventFeeNotApplicable } from '@/lib/events/venue-attendance';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
 import {
     pendingProofDisplay,
@@ -258,6 +259,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
     const guestCount = clampGuestCount(formData.number_of_guests);
     const guestsEating = clampGuestsEating(formData.guests_eating, guestCount);
     const showFoodQuestion = anyoneEating(formData.attending && formData.lunch, guestsEating);
+    const donationOnlyRegistration = eventFeeNotApplicable(formData.attending, guestCount);
 
     // Parking limits: total vehicles may not exceed the people coming (alumnus + guests).
     const maxVehicles = maxVehiclesFor(guestCount);
@@ -671,11 +673,10 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                     {payingOnline ? 'Opening checkout…' : 'Pay online'}
                                 </button>
                             ) : null}
-                            {(amountDuePaise > 0 || pendingProof) && (
+                            {canOpenPay ? (
                                 <button
                                     type="button"
                                     onClick={() => void openPayModal()}
-                                    disabled={!canOpenPay}
                                     className="flex-1 py-3 rounded-lg bg-dark-blue text-on-dark-blue text-label-md uppercase tracking-wider font-bold hover:opacity-90 disabled:opacity-50 transition-all focus:outline-none focus:ring-2 focus:ring-dark-blue/40"
                                 >
                                     {payPreparing
@@ -684,7 +685,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                           ? 'View payment proof'
                                           : 'Pay Via Alternative Method'}
                                 </button>
-                            )}
+                            ) : null}
                         </div>
                         {onlineCheckoutEnabled && formDirty && amountDuePaise > 0 ? (
                             <p className="text-body-sm text-on-surface-variant">
@@ -716,7 +717,11 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             amountPaise={amountDuePaise}
                             note="Golden Jubilee registration"
                             transactionId={payRegistrationCode}
-                            source={{ type: 'registration', registrationId: payRegistrationId }}
+                            source={{
+                                type: 'registration',
+                                registrationId: payRegistrationId,
+                                donationOnly: donationOnlyRegistration,
+                            }}
                             existingProof={
                                 pendingProof
                                     ? {

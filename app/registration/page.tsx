@@ -23,6 +23,7 @@ import { formatLocation, isValidBatch, isValidSection, parseLocation } from '@/l
 import { chooseRegistrationEvent } from '@/lib/events/choose-event';
 import type { EventRegistrationHint } from '@/lib/events/event-cta';
 import { eventIsOpen } from '@/lib/events/open';
+import { eventFeeNotApplicable } from '@/lib/events/venue-attendance';
 import type { EventCatalog } from '@/lib/events/types';
 import {
     mergeRegistrationPrefill,
@@ -51,7 +52,7 @@ import {
     confirmRegistrationCashfreePayment,
 } from '@/lib/payments/cashfree-confirm-client';
 import { openCashfreeCheckout } from '@/lib/payments/checkout-client';
-import { pendingProofDisplay } from '@/lib/payments/offline-proof';
+import { pendingProofDisplay, REGISTRATION_DONATION_ONLY_THANKS } from '@/lib/payments/offline-proof';
 import {
     toCheckoutOrder,
     type OrderApiResponse,
@@ -794,10 +795,13 @@ function RegistrationPageInner() {
                 return;
             }
             const verified = confirmed.verified;
+            const giftOnly = eventFeeNotApplicable(formData.attending, formData.number_of_guests);
             setSaveMessage(
-                verified.registration_code
-                    ? `Payment received. Your registration code is ${verified.registration_code}.`
-                    : 'Payment received.'
+                giftOnly
+                    ? REGISTRATION_DONATION_ONLY_THANKS
+                    : verified.registration_code
+                      ? `Payment received. Your registration code is ${verified.registration_code}.`
+                      : 'Payment received.'
             );
             if (event?.id) await loadSavedRegistration(event.id, false);
         } catch {

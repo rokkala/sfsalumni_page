@@ -17,6 +17,10 @@ export const SCREENSHOT_BANK_REFERENCE = 'Screenshot on file';
 export const PENDING_PROOF_LOCK_MESSAGE =
   'Your Bank / UPI proof is pending committee review. Save changes to withdraw it and update your registration.';
 
+/** Offline / alternative-method thanks when registration has no attendance, only a gift. */
+export const REGISTRATION_DONATION_ONLY_THANKS =
+  'Thank you for the Donation. The committee will confirm your payment.';
+
 /** Member-facing message when another proof submit is blocked. */
 export const PENDING_PROOF_ALREADY_MESSAGE =
   'A Bank / UPI proof is already pending review. Wait for the committee, or contact them if you need to change the reference.';

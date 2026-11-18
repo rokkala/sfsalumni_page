@@ -23,6 +23,7 @@ import {
   formatNextUpiWindowIst,
   type UpiQuotaSnapshot,
 } from '@/lib/payments/upi-quota';
+import { REGISTRATION_DONATION_ONLY_THANKS } from '@/lib/payments/offline-proof';
 
 export type { BankAccountPublic };
 
@@ -50,7 +51,7 @@ type Props = {
   /** Pre-filled UPI `tr` in the QR (e.g. registration id). */
   transactionId?: string;
   source:
-    | { type: 'registration'; registrationId: string }
+    | { type: 'registration'; registrationId: string; donationOnly?: boolean }
     | { type: 'donation'; causeId: string; message?: string };
   /** When set, proof was already submitted and cannot be replaced until reviewed. */
   existingProof?: ExistingOfflineProof | null;
@@ -68,9 +69,11 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 function offlineThanksFallback(source: Props['source']): string {
-  return source.type === 'donation'
-    ? 'Thank you for your donation. The committee will confirm your payment.'
-    : 'Thank you for your payment. Your entry pass unlocks once the committee confirms payment.';
+  if (source.type === 'donation') {
+    return 'Thank you for your donation. The committee will confirm your payment.';
+  }
+  if (source.donationOnly) return REGISTRATION_DONATION_ONLY_THANKS;
+  return 'Thank you for your payment. Your entry pass unlocks once the committee confirms payment.';
 }
 
 export default function OfflinePayModal({
@@ -325,11 +328,7 @@ export default function OfflinePayModal({
       }
       setUtr('');
       setFile(null);
-      setThanksMessage(
-        source.type === 'donation'
-          ? 'Thank you for your donation. The committee will confirm your payment.'
-          : 'Thank you for your payment. Your entry pass unlocks once the committee confirms payment.'
-      );
+      setThanksMessage(offlineThanksFallback(source));
       setPhase('thanks');
     } catch {
       setError('Could not submit. Try again.');
@@ -407,8 +406,9 @@ export default function OfflinePayModal({
             ) : null}
             {source.type === 'registration' ? (
               <p className="text-sm text-on-surface-variant">
-                Your entry pass QR will appear once the committee marks this payment paid. You can
-                update details after they review it.
+                {source.donationOnly
+                  ? 'The committee will confirm your donation after they review your proof.'
+                  : 'Your entry pass QR will appear once the committee marks this payment paid. You can update details after they review it.'}
               </p>
             ) : (
               <p className="text-sm text-on-surface-variant">

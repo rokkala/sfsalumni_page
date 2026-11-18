@@ -18,6 +18,7 @@ import {
   bankReferenceFromProof,
   pendingPaymentMemberLabel,
   pendingProofDisplay,
+  REGISTRATION_DONATION_ONLY_THANKS,
   registrationFormHeading,
   venuePassPaymentCue,
   verificationStatusLabel,
@@ -316,6 +317,10 @@ if (
   giftAwaiting.message.includes('entry pass')
 ) {
   throw new Error('donation-only awaiting cue');
+}
+
+if (!REGISTRATION_DONATION_ONLY_THANKS.includes('Thank you for the Donation')) {
+  throw new Error('donation-only thanks copy');
 }
 
 if (isUpiEligible(UPI_MIN_TOTAL_PAISE - 1)) throw new Error('upi min edge low');
