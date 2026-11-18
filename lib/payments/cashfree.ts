@@ -40,6 +40,14 @@ export function cashfreePublicMode(): 'sandbox' | 'production' {
 
 type CfJson = Record<string, unknown>;
 
+/** JSON `null` must not become the literal cursor string "null" (Cashfree rejects it). */
+function normalizeCfCursor(raw: unknown): string | null {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const s = String(raw).trim();
+  if (!s || s.toLowerCase() === 'null') return null;
+  return s;
+}
+
 async function cfRequest<T extends CfJson>(
   path: string,
   init: RequestInit & { body?: string }
@@ -144,6 +152,11 @@ export type CashfreePaymentEntity = {
   payment_status: string;
   payment_amount: number;
   order_id: string;
+  payment_group?: string;
+  bank_reference?: string;
+  auth_id?: string;
+  payment_completion_time?: string;
+  payment_message?: string;
 };
 
 export async function fetchCashfreePayments(orderId: string): Promise<
@@ -250,11 +263,11 @@ export async function fetchCashfreeReconPage(input: {
   | { ok: false; status: number; message: string }
 > {
   const limit = Math.min(200, Math.max(1, input.limit ?? 100));
+  const pagination: { limit: number; cursor?: string } = { limit };
+  const nextCursor = normalizeCfCursor(input.cursor);
+  if (nextCursor) pagination.cursor = nextCursor;
   const body = JSON.stringify({
-    pagination: {
-      limit,
-      cursor: input.cursor ?? null,
-    },
+    pagination,
     filters: {
       start_date: input.startDateIso,
       end_date: input.endDateIso,
@@ -263,10 +276,7 @@ export async function fetchCashfreeReconPage(input: {
   const result = await cfRequest<ReconPage>('/recon', { method: 'POST', body });
   if (!result.ok) return result;
   const events = Array.isArray(result.data.data) ? result.data.data : [];
-  const cursor =
-    result.data.cursor === undefined || result.data.cursor === ''
-      ? null
-      : String(result.data.cursor);
+  const cursor = normalizeCfCursor(result.data.cursor);
   return { ok: true, cursor, events };
 }
 
@@ -332,12 +342,11 @@ export async function fetchCashfreeSettlementsPage(input: {
   | { ok: false; status: number; message: string }
 > {
   const limit = Math.min(200, Math.max(1, input.limit ?? 50));
+  const pagination: { limit: number; cursor?: string } = { limit };
+  const nextCursor = normalizeCfCursor(input.cursor);
+  if (nextCursor) pagination.cursor = nextCursor;
   const body = JSON.stringify({
-    product: 'PG',
-    pagination: {
-      limit,
-      cursor: input.cursor ?? null,
-    },
+    pagination,
     filters: {
       start_date: input.startDateIso,
       end_date: input.endDateIso,
@@ -346,10 +355,7 @@ export async function fetchCashfreeSettlementsPage(input: {
   const result = await cfRequest<SettlementsPage>('/settlements', { method: 'POST', body });
   if (!result.ok) return result;
   const settlements = Array.isArray(result.data.data) ? result.data.data : [];
-  const cursor =
-    result.data.cursor === undefined || result.data.cursor === ''
-      ? null
-      : String(result.data.cursor);
+  const cursor = normalizeCfCursor(result.data.cursor);
   return { ok: true, cursor, settlements };
 }
 
@@ -362,16 +368,22 @@ export async function fetchCashfreeSettlementsRange(
   | { ok: false; status: number; message: string }
 > {
   const all: CashfreeSettlementBatch[] = [];
+  const pageLimit = 50;
   let cursor: string | null = null;
   for (let page = 0; page < maxPages; page += 1) {
     const result = await fetchCashfreeSettlementsPage({
       startDateIso,
       endDateIso,
       cursor,
+      limit: pageLimit,
     });
-    if (!result.ok) return result;
+    if (!result.ok) {
+      if (all.length > 0) return { ok: true, settlements: all };
+      return result;
+    }
     all.push(...result.settlements);
     if (!result.cursor) break;
+    if (result.settlements.length < pageLimit) break;
     cursor = result.cursor;
   }
   return { ok: true, settlements: all };

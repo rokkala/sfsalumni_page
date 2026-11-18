@@ -28,6 +28,8 @@ type TxRow = {
   customer_email: string | null;
   portal_links: PortalLink[];
   in_portal: boolean;
+  portal_payment_status?: string | null;
+  payment_detail?: string | null;
 };
 
 type TxPayload = {
@@ -398,7 +400,15 @@ export default function AdminCashfreeTransactionsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="block text-primary font-medium">{r.event_status || '—'}</span>
-                      <span className="text-label-sm text-on-surface-variant">{r.event_type}</span>
+                      <span className="text-label-sm text-on-surface-variant">
+                        {r.event_type}
+                        {r.portal_payment_status ? ` · portal ${r.portal_payment_status}` : ''}
+                      </span>
+                      {r.payment_detail ? (
+                        <span className="text-label-sm text-on-surface-variant block mt-0.5">
+                          {r.payment_detail}
+                        </span>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 tabular-nums">
                       {formatInr(r.payment_amount_inr ?? r.order_amount_inr)}
