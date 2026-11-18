@@ -197,9 +197,9 @@ export default function NavBar() {
                         <>
                             <Link
                                 href="/login"
-                                className="inline-flex items-center justify-center px-2.5 lg:px-3 py-2 rounded-lg text-label-md uppercase tracking-wider text-primary hover:bg-surface-container transition-colors whitespace-nowrap"
+                                className="inline-flex items-center justify-center px-3 lg:px-3.5 py-2 rounded-lg text-label-md uppercase tracking-wider bg-primary text-on-primary hover:bg-navy-subtle shadow-sm transition-all whitespace-nowrap"
                             >
-                                Login
+                                Sign in
                             </Link>
                             <button
                                 type="button"
@@ -208,12 +208,6 @@ export default function NavBar() {
                             >
                                 Association
                             </button>
-                            <Link
-                                href="/signup"
-                                className="inline-flex items-center justify-center px-3 lg:px-3.5 py-2 rounded-lg text-label-md uppercase tracking-wider bg-primary text-on-primary hover:bg-navy-subtle shadow-sm transition-all whitespace-nowrap"
-                            >
-                                Sign Up
-                            </Link>
                         </>
                     )}
 
@@ -279,9 +273,9 @@ export default function NavBar() {
                             <Link
                                 href="/login"
                                 onClick={() => setMobileMenuOpen(false)}
-                                className="w-full inline-flex items-center justify-center px-3 py-2.5 rounded-lg text-label-md uppercase tracking-wider text-primary hover:bg-surface-container transition-colors"
+                                className="w-full inline-flex items-center justify-center px-3.5 py-2.5 rounded-lg text-label-md uppercase tracking-wider bg-primary text-on-primary shadow-sm"
                             >
-                                Login
+                                Sign in
                             </Link>
                             <button
                                 type="button"
@@ -293,13 +287,6 @@ export default function NavBar() {
                             >
                                 Association
                             </button>
-                            <Link
-                                href="/signup"
-                                onClick={() => setMobileMenuOpen(false)}
-                                className="w-full inline-flex items-center justify-center px-3.5 py-2.5 rounded-lg text-label-md uppercase tracking-wider bg-primary text-on-primary shadow-sm"
-                            >
-                                Sign Up
-                            </Link>
                         </div>
                     )}
                     {user && (

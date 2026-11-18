@@ -26,9 +26,6 @@ export default function MemberGate({
   const loginHref = loginNext
     ? `/login?next=${encodeURIComponent(loginNext)}`
     : '/login';
-  const signupHref = loginNext
-    ? `/signup?next=${encodeURIComponent(loginNext)}`
-    : '/signup';
   const [state, setState] = useState('loading');
   const [busy, setBusy] = useState(false);
 
@@ -122,10 +119,7 @@ export default function MemberGate({
       {state === 'signed-out' && (
         <div className="flex gap-3 mt-5">
           <Link className="px-5 py-3 rounded-lg bg-primary text-white" href={loginHref}>
-            Sign in
-          </Link>
-          <Link className="px-5 py-3 rounded-lg bg-secondary-container text-primary" href={signupHref}>
-            Create account
+            Sign in or create account
           </Link>
         </div>
       )}

@@ -85,13 +85,18 @@ function SignupForm() {
 
     useEffect(() => {
         const login = searchParams.get('login')?.trim();
-        if (!login) return;
+        if (!login) {
+            const next = searchParams.get('next');
+            const q = next ? `?next=${encodeURIComponent(next)}` : '';
+            router.replace(`/login${q}`);
+            return;
+        }
         if (login.includes('@')) {
             setEmail((prev) => prev || login);
         } else {
             setUsername((prev) => prev || login);
         }
-    }, [searchParams]);
+    }, [searchParams, router]);
 
     function applyRosterMatch(match: PreRegistrationData) {
         const names = namesFromRoster(match);
