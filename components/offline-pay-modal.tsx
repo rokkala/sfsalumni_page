@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import AmountWithFx from '@/components/amount-with-fx';
+import { ModalCloseButton, ModalOverlay } from '@/components/modal-shell';
 import {
   buildUpiPayUri,
   normalizeUpiRefNoInput,
@@ -349,25 +350,26 @@ export default function OfflinePayModal({
     rows.push({ key: 'upi', label: 'UPI ID', value: account.upi_id });
   }
 
+  function dismissModal() {
+    if (phase === 'thanks') finishThanks();
+    else onClose();
+  }
+
   return createPortal(
-    <div
-      className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/45 p-0 sm:p-4"
-      role="presentation"
-      onClick={() => {
-        if (busy) return;
-        if (phase === 'thanks') finishThanks();
-        else onClose();
-      }}
+    <ModalOverlay
+      titleId={titleId}
+      backdropLabel="Close payment dialog"
+      onBackdropClose={dismissModal}
+      disableBackdropClose={busy}
+      panelClassName="sm:max-w-md overflow-y-auto bg-surface"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="w-full sm:max-w-md max-h-[92vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-surface border border-outline-variant shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
         {phase === 'thanks' ? (
-          <div className="px-5 py-8 space-y-5 text-center">
+          <div className="relative px-5 py-8 space-y-5 text-center">
+            <ModalCloseButton
+              closeRef={closeRef}
+              onClick={finishThanks}
+              className="absolute right-2 top-2"
+            />
             <h2 id={titleId} className="text-lg font-semibold text-on-surface">
               Thank you
             </h2>
@@ -389,15 +391,7 @@ export default function OfflinePayModal({
               <h2 id={titleId} className="text-lg font-semibold text-on-surface">
                 Payment already submitted
               </h2>
-              <button
-                ref={closeRef}
-                type="button"
-                onClick={onClose}
-                className="rounded-lg p-2 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
-                aria-label="Close"
-              >
-                ×
-              </button>
+              <ModalCloseButton closeRef={closeRef} onClick={onClose} />
             </div>
             <p className="text-sm text-on-surface" role="status">
               Your Bank / UPI payment proof is already on file and pending committee review. Do not
@@ -447,16 +441,7 @@ export default function OfflinePayModal({
                   />
                 </div>
               </div>
-              <button
-                ref={closeRef}
-                type="button"
-                onClick={onClose}
-                disabled={busy}
-                className="rounded-lg p-2 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
-                aria-label="Close"
-              >
-                ×
-              </button>
+              <ModalCloseButton closeRef={closeRef} onClick={onClose} disabled={busy} />
             </div>
 
             <div className="px-5 py-4 space-y-4">
@@ -824,8 +809,7 @@ export default function OfflinePayModal({
             </div>
           </>
         )}
-      </div>
-    </div>,
+    </ModalOverlay>,
     document.body
   );
 }

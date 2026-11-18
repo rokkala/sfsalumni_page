@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import CommitteeBusinessCard, {
   type PublicCommitteeMember,
 } from '@/components/committee-business-card';
+import { ModalCloseButton, ModalOverlay } from '@/components/modal-shell';
 
 export type { PublicCommitteeMember };
 
@@ -66,42 +67,27 @@ export default function AssociationModal({
   // Rendered into document.body so ancestor transforms, filters, or overflow
   // rules can't offset or clip the fixed overlay
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-6">
-      <button
-        type="button"
-        className="absolute inset-0 bg-primary/50 backdrop-blur-[2px] cursor-pointer"
-        aria-label="Close association dialog"
-        onClick={onClose}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="relative z-[81] w-full sm:max-w-3xl max-h-[92vh] overflow-hidden rounded-t-2xl sm:rounded-2xl bg-surface-paper border border-outline-variant shadow-xl flex flex-col"
-      >
-        <div className="flex items-start justify-between gap-3 px-6 pt-6 pb-4 border-b border-outline-variant">
-          <div>
-            <p className="text-label-sm uppercase tracking-widest text-jubilee-gold-deep font-bold">
-              SFS Alumni
-            </p>
-            <h2 id={titleId} className="text-headline-sm text-primary mt-1">
-              Association & committee
-            </h2>
-            <p className="text-body-sm text-on-surface-variant mt-2">
-              The alumni association connects generations of SFS Shanthinagar. Reach the committee
-              below for membership or events.
-            </p>
-          </div>
-          <button
-            ref={closeRef}
-            type="button"
-            onClick={onClose}
-            className="shrink-0 p-2 rounded-lg text-primary hover:bg-surface-container focus:outline-none focus:ring-2 focus:ring-primary/30"
-            aria-label="Close"
-          >
-            <span className="material-symbols-outlined text-[22px]">close</span>
-          </button>
+    <ModalOverlay
+      titleId={titleId}
+      backdropLabel="Close association dialog"
+      onBackdropClose={onClose}
+      panelClassName="sm:max-w-3xl flex flex-col"
+    >
+      <div className="flex items-start justify-between gap-3 border-b border-outline-variant px-6 pb-4 pt-6">
+        <div>
+          <p className="text-label-sm font-bold uppercase tracking-widest text-jubilee-gold-deep">
+            SFS Alumni
+          </p>
+          <h2 id={titleId} className="mt-1 text-headline-sm text-primary">
+            Association & committee
+          </h2>
+          <p className="mt-2 text-body-sm text-on-surface-variant">
+            The alumni association connects generations of SFS Shanthinagar. Reach the committee below
+            for membership or events.
+          </p>
         </div>
+        <ModalCloseButton closeRef={closeRef} onClick={onClose} />
+      </div>
 
         <div className="overflow-y-auto px-6 py-5 flex-1">
           {members === null && (
@@ -132,8 +118,7 @@ export default function AssociationModal({
             About the association →
           </Link>
         </div>
-      </div>
-    </div>,
+    </ModalOverlay>,
     document.body,
   );
 }

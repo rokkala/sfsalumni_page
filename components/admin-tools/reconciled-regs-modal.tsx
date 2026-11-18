@@ -2,6 +2,7 @@
 
 import { createPortal } from 'react-dom';
 import { useEffect, useId, useRef, useState } from 'react';
+import { ModalCloseButton, ModalOverlay } from '@/components/modal-shell';
 import { formatCostForDisplay } from '@/lib/registration/registration';
 
 type Row = {
@@ -86,43 +87,28 @@ export default function ReconciledRegsModal({
   const total = (rows || []).reduce((sum, r) => sum + r.settled_paise, 0);
 
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-6">
-      <button
-        type="button"
-        className="absolute inset-0 bg-primary/50 backdrop-blur-[2px] cursor-pointer"
-        aria-label="Close payments reconciled"
-        onClick={onClose}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="relative z-[81] flex w-full sm:max-w-3xl max-h-[92vh] flex-col overflow-hidden rounded-t-2xl sm:rounded-2xl border border-outline-variant bg-surface-paper shadow-xl"
-      >
-        <div className="flex items-start justify-between gap-3 border-b border-outline-variant px-6 pb-4 pt-6">
-          <div>
-            <p className="text-label-sm font-bold uppercase tracking-widest text-jubilee-gold-deep">
-              Committee tools
-            </p>
-            <h2 id={titleId} className="mt-1 text-headline-sm text-primary">
-              Payments reconciled
-            </h2>
-            <p className="mt-1 text-body-sm text-on-surface-variant">
-              {rows
-                ? `${rows.length} registrations · ${formatCostForDisplay(total)} received`
-                : 'Loading reconciled registrations…'}
-            </p>
-          </div>
-          <button
-            ref={closeRef}
-            type="button"
-            onClick={onClose}
-            className="shrink-0 rounded-lg p-2 text-primary hover:bg-surface-container focus:outline-none focus:ring-2 focus:ring-primary/30"
-            aria-label="Close"
-          >
-            <span className="material-symbols-outlined text-[22px]">close</span>
-          </button>
+    <ModalOverlay
+      titleId={titleId}
+      backdropLabel="Close payments reconciled"
+      onBackdropClose={onClose}
+      panelClassName="flex w-full flex-col sm:max-w-3xl"
+    >
+      <div className="flex items-start justify-between gap-3 border-b border-outline-variant px-6 pb-4 pt-6">
+        <div>
+          <p className="text-label-sm font-bold uppercase tracking-widest text-jubilee-gold-deep">
+            Committee tools
+          </p>
+          <h2 id={titleId} className="mt-1 text-headline-sm text-primary">
+            Payments reconciled
+          </h2>
+          <p className="mt-1 text-body-sm text-on-surface-variant">
+            {rows
+              ? `${rows.length} registrations · ${formatCostForDisplay(total)} received`
+              : 'Loading reconciled registrations…'}
+          </p>
         </div>
+        <ModalCloseButton closeRef={closeRef} onClick={onClose} />
+      </div>
         <div className="min-h-0 flex-1 overflow-auto">
           {error && (
             <p className="m-4 rounded-xl border border-error-container bg-error-container/40 p-3 text-body-sm text-on-error-container">
@@ -167,8 +153,7 @@ export default function ReconciledRegsModal({
             </table>
           )}
         </div>
-      </div>
-    </div>,
+    </ModalOverlay>,
     document.body
   );
 }

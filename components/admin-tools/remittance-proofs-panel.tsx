@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useState } from 'react';
 import Link from 'next/link';
 import AdminBulkBar from '@/components/admin-tools/admin-bulk-bar';
+import { ModalCloseButton, ModalOverlay } from '@/components/modal-shell';
 import {
   remittanceMethodLabel,
   type RemittanceMethod,
@@ -471,35 +472,23 @@ export default function RemittanceProofsPanel() {
       </section>
 
       {reviewProof ? (
-        <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 p-0 sm:p-6"
-          role="presentation"
-          onClick={() => !busy && setReviewId(null)}
+        <ModalOverlay
+          titleId={reviewTitleId}
+          backdropLabel="Close review remittance"
+          onBackdropClose={() => setReviewId(null)}
+          disableBackdropClose={busy}
+          panelClassName="space-y-4 overflow-y-auto p-5 sm:max-w-2xl"
         >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={reviewTitleId}
-            className="w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-surface-paper border border-outline-variant shadow-xl p-5 space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 id={reviewTitleId} className="text-headline-sm text-primary">
                   Review remittance
                 </h3>
-                <p className="text-body-sm text-on-surface-variant mt-1">
+                <p className="mt-1 text-body-sm text-on-surface-variant">
                   {reviewProof.donor_name} · {formatInr(reviewProof.amount_paise)}
                 </p>
               </div>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setReviewId(null)}
-                className="rounded-lg border border-outline-variant px-3 py-1.5 text-label-sm cursor-pointer"
-              >
-                Close
-              </button>
+              <ModalCloseButton disabled={busy} onClick={() => setReviewId(null)} />
             </div>
             <dl className="grid gap-2 text-body-sm sm:grid-cols-2">
               <div>
@@ -580,8 +569,7 @@ export default function RemittanceProofsPanel() {
                 Reject
               </button>
             </div>
-          </div>
-        </div>
+        </ModalOverlay>
       ) : null}
     </>
   );
