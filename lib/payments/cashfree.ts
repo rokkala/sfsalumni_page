@@ -56,12 +56,17 @@ async function cfRequest<T extends CfJson>(
       ...(init.headers || {}),
     },
   });
-  const data = (await res.json().catch(() => ({}))) as T & { message?: string };
+  const data = (await res.json().catch(() => ({}))) as T & {
+    message?: string;
+    code?: string;
+    type?: string;
+  };
   if (!res.ok) {
+    const detail = [data.message, data.code].filter(Boolean).join(' — ');
     return {
       ok: false,
       status: res.status,
-      message: String(data.message || res.statusText || 'Cashfree request failed'),
+      message: detail || res.statusText || 'Cashfree request failed',
     };
   }
   return { ok: true, data };

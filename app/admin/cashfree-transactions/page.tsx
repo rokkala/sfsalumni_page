@@ -36,6 +36,8 @@ type TxPayload = {
   to: string;
   count: number;
   rows: TxRow[];
+  source?: 'cashfree_recon' | 'portal';
+  notice?: string;
 };
 
 type SettlementRow = {
@@ -79,7 +81,7 @@ function formatWhen(iso: string | null): string {
 function defaultFromTo() {
   const end = new Date();
   const start = new Date();
-  start.setDate(start.getDate() - 30);
+  start.setDate(start.getDate() - 29);
   const iso = (d: Date) => d.toISOString().slice(0, 10);
   return { from: iso(start), to: iso(end) };
 }
@@ -111,6 +113,17 @@ export default function AdminCashfreeTransactionsPage() {
     setLoading(true);
     setError('');
     const params = new URLSearchParams({ from, to });
+  const fromD = new Date(`${from}T00:00:00Z`);
+  const toD = new Date(`${to}T00:00:00Z`);
+  if (tab === 'transactions' && Number.isFinite(fromD.getTime()) && Number.isFinite(toD.getTime())) {
+    const days = (toD.getTime() - fromD.getTime()) / (24 * 60 * 60 * 1000);
+    if (days > 30) {
+      setError('Transactions allow at most 30 days. Narrow the range or use the Settlements tab.');
+      setTxData(null);
+      setLoading(false);
+      return;
+    }
+  }
     try {
       if (tab === 'transactions') {
         if (onlyPortal) params.set('portal', '1');
@@ -241,7 +254,8 @@ export default function AdminCashfreeTransactionsPage() {
     <AdminShell title="Cashfree reports">
       <p className="text-body-sm text-on-surface-variant mb-4 max-w-3xl">
         <strong className="font-semibold text-on-surface">Transactions</strong> — customer payments
-        and refunds (reconciliation API), matched to portal registrations and donations.{' '}
+        and refunds (Cashfree reconciliation when available, otherwise portal orders), max 30-day
+        range, matched to registrations and donations.{' '}
         <strong className="font-semibold text-on-surface">Settlements</strong> — batches Cashfree
         sends to your bank (gross, fees, net, settlement UTR). Offline member UTR is on{' '}
         <Link href="/admin/remittance-proofs" className="text-primary underline font-medium">
@@ -329,10 +343,16 @@ export default function AdminCashfreeTransactionsPage() {
         <p className="rounded-lg bg-error-container text-error text-body-sm p-3 mb-4">{error}</p>
       ) : null}
 
+      {tab === 'transactions' && txData?.notice ? (
+        <p className="rounded-lg border border-jubilee-gold-light bg-secondary-container/25 text-body-sm text-on-surface-variant p-3 mb-4">
+          {txData.notice}
+        </p>
+      ) : null}
       {tab === 'transactions' && txData ? (
         <p className="text-label-sm text-on-surface-variant mb-3 tabular-nums">
-          Mode: <span className="text-primary font-medium">{txData.mode}</span> · {txData.count}{' '}
-          payment events · {txData.from} → {txData.to}
+          Mode: <span className="text-primary font-medium">{txData.mode}</span> ·{' '}
+          {txData.source === 'portal' ? 'Portal + live order lookup' : 'Cashfree reconciliation'} ·{' '}
+          {txData.count} rows · {txData.from} → {txData.to}
         </p>
       ) : null}
       {tab === 'settlements' && settlementData ? (

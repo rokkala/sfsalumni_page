@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { loadPortalCashfreeTransactions } from '@/lib/admin/cashfree-portal-transactions';
 import { buildPortalOrderIndex, type PortalOrderLink } from '@/lib/admin/cashfree-portal-orders';
 import { requireVerifiedAdmin } from '@/lib/auth/admin-guard';
 import {
@@ -12,7 +13,8 @@ import { createAdminClient } from '@/lib/supabase-admin';
 
 export const dynamic = 'force-dynamic';
 
-const MAX_RANGE_DAYS = 93;
+/** Cashfree /recon allows at most 30 days between start and end. */
+const MAX_RECON_RANGE_DAYS = 30;
 const PAYMENT_EVENT_TYPES = new Set(['PAYMENT', 'REFUND', 'REFUND_REVERSAL']);
 
 function parseYmd(s: string | null): Date | null {
@@ -34,7 +36,7 @@ function endIso(d: Date): string {
 function defaultRange() {
   const end = new Date();
   const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - 30);
+  start.setUTCDate(start.getUTCDate() - 29);
   return { start, end };
 }
 
@@ -86,25 +88,44 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'from must be on or before to' }, { status: 400 });
   }
   const rangeDays = (end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000);
-  if (rangeDays > MAX_RANGE_DAYS) {
+  if (rangeDays > MAX_RECON_RANGE_DAYS) {
     return NextResponse.json(
-      { error: `Date range cannot exceed ${MAX_RANGE_DAYS} days` },
+      {
+        error: `Transactions from Cashfree reconciliation allow at most ${MAX_RECON_RANGE_DAYS} days. Pick a shorter range or use Settlements for a longer period.`,
+      },
       { status: 400 }
     );
   }
 
-  const recon = await fetchCashfreeReconRange(startIso(start), endIso(end));
+  const admin = createAdminClient();
+  const portal = await buildPortalOrderIndex(admin);
+  const startBound = startIso(start);
+  const endBound = endIso(end);
+
+  const recon = await fetchCashfreeReconRange(startBound, endBound);
   if (!recon.ok) {
-    return NextResponse.json({ error: recon.message }, { status: recon.status || 502 });
+    const portalRows = await loadPortalCashfreeTransactions(admin, startBound, endBound, portal, {
+      enrichLive: true,
+    });
+    let rows = portalRows;
+    if (onlyPortal) rows = rows.filter((r) => r.in_portal);
+    return NextResponse.json({
+      mode: cashfreePublicMode(),
+      env: cashfreeEnv(),
+      from: start.toISOString().slice(0, 10),
+      to: end.toISOString().slice(0, 10),
+      count: rows.length,
+      rows,
+      source: 'portal',
+      notice:
+        `Cashfree reconciliation API is unavailable (${recon.message}). Showing portal online checkout orders with live order status where possible.`,
+    });
   }
 
   let events = recon.events;
   if (typesParam === 'payments') {
     events = events.filter((e) => PAYMENT_EVENT_TYPES.has(String(e.event_type || '').toUpperCase()));
   }
-
-  const admin = createAdminClient();
-  const portal = await buildPortalOrderIndex(admin);
 
   let rows = events.map((ev) => toRow(ev, portal));
   if (onlyPortal) {
@@ -119,5 +140,6 @@ export async function GET(request: Request) {
     to: end.toISOString().slice(0, 10),
     count: rows.length,
     rows,
+    source: 'cashfree_recon',
   });
 }
