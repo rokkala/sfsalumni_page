@@ -35,6 +35,7 @@ export default function SearchableSelect({
   const [highlight, setHighlight] = useState(0);
 
   const selected = options.find((o) => o.value === value) || null;
+  const closedLabel = selected?.label ?? (value ? value : '');
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -43,8 +44,8 @@ export default function SearchableSelect({
   }, [options, query]);
 
   useEffect(() => {
-    if (!open) setQuery(selected?.label || '');
-  }, [open, selected]);
+    if (!open) setQuery(closedLabel);
+  }, [open, closedLabel]);
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -85,7 +86,7 @@ export default function SearchableSelect({
       if (open && filtered[highlight]) pick(filtered[highlight]);
     } else if (e.key === 'Escape') {
       setOpen(false);
-      setQuery(selected?.label || '');
+      setQuery(closedLabel);
     }
   }
 
@@ -103,11 +104,11 @@ export default function SearchableSelect({
           autoComplete="off"
           disabled={disabled}
           required={required && !value}
-          value={open ? query : selected?.label || query}
+          value={open ? query : closedLabel}
           placeholder={placeholder}
           onFocus={() => {
             setOpen(true);
-            setQuery('');
+            setQuery(closedLabel);
           }}
           onChange={(e) => {
             setQuery(e.target.value);
