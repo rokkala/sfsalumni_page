@@ -466,7 +466,11 @@ function RegistrationPageInner() {
                 reg as unknown as ExistingRegistrationRow
             );
             const nextForm = formFromPrefill(prefill);
-            setFormData(nextForm);
+            setFormData((prev) => ({
+              ...nextForm,
+              city: nextForm.city || prev.city,
+              country: nextForm.country || prev.country,
+            }));
             setSavedFingerprint(choicesFingerprint(nextForm));
         }
 
@@ -679,32 +683,28 @@ function RegistrationPageInner() {
         await saveRegistration();
     }
 
-    /** Saves the form if needed, then returns the registration id for the offline pay modal. */
+    /** Saves if needed, then returns registration id + UPI/bank reference for the offline modal. */
     async function prepareOfflinePay(): Promise<
-        { registrationId: string; registrationCode: string } | { error: string }
+        { registrationId: string; transactionRef: string } | { error: string }
     > {
         let regId = registrationId;
-        let code = registrationCode?.trim() || '';
         if (pendingProof) {
             if (!regId) return { error: 'Could not find your registration. Please try again.' };
-            if (!code) return { error: 'Could not load your SFS payment id. Refresh and try again.' };
-            return { registrationId: regId, registrationCode: code };
+            const ref = registrationCode?.trim() || regId;
+            return { registrationId: regId, transactionRef: ref };
         }
         if (formDirty || !regId) {
             const loaded = await saveRegistration();
             if (!loaded) return { error: 'Fix the errors on the form, then try again.' };
             regId = loaded.id;
-            code = loaded.registrationCode?.trim() || '';
         }
         if (!regId) return { error: 'Could not find your registration. Please try again.' };
+        let code = registrationCode?.trim() || '';
         if (!code) {
             const reloaded = await loadSavedRegistration(event!.id, false);
             code = reloaded?.registrationCode?.trim() || '';
         }
-        if (!code) {
-            return { error: 'Could not load your SFS payment id. Save registration and try again.' };
-        }
-        return { registrationId: regId, registrationCode: code };
+        return { registrationId: regId, transactionRef: code || regId };
     }
 
     async function payRegistrationOnline() {

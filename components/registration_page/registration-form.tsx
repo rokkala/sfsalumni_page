@@ -69,7 +69,7 @@ export interface RegistrationFormProps {
     verificationPending: boolean;
     bankAccount: BankAccountPublic | null;
     onPrepareOfflinePay: () => Promise<
-        { registrationId: string; registrationCode: string } | { error: string }
+        { registrationId: string; transactionRef: string } | { error: string }
     >;
     /** Bank / UPI reference last submitted for verification. */
     savedBankReference: string;
@@ -250,7 +250,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
             return;
         }
         setPayRegistrationId(result.registrationId);
-        setPayRegistrationCode(result.registrationCode);
+        setPayRegistrationCode(result.transactionRef);
         setPayOpen(true);
     }
 
