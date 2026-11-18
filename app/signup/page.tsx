@@ -5,6 +5,7 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { safeRegistrationNext } from '@/lib/events/choose-event';
+import { useWaitCursor } from '@/lib/use-wait-cursor';
 import PasswordInput from '@/components/password-input';
 import BackHomeLink from '@/components/back-home-link';
 import { ConfirmPrefillScreen } from '@/components/registration_page/registration-screens';
@@ -83,6 +84,13 @@ function SignupForm() {
     const rosterLookupForLogin = useRef<string | null>(null);
     const router = useRouter();
     const searchParams = useSearchParams();
+    const loginFromGate = searchParams.get('login')?.trim() ?? '';
+    /** After /login or /new_registration gate: hold Create Account until member roster lookup finishes. */
+    const [gateRosterReady, setGateRosterReady] = useState(
+        !loginFromGate || !loginFromGate.includes('@')
+    );
+
+    useWaitCursor(loading || lookingUp || !gateRosterReady);
 
     useEffect(() => {
         const login = searchParams.get('login')?.trim();
@@ -165,10 +173,26 @@ function SignupForm() {
 
     useEffect(() => {
         const login = searchParams.get('login')?.trim();
-        if (!login || !login.includes('@')) return;
-        if (rosterLookupForLogin.current === login) return;
+        if (!login || !login.includes('@')) {
+            setGateRosterReady(true);
+            return;
+        }
+        if (rosterLookupForLogin.current === login) {
+            setGateRosterReady(true);
+            return;
+        }
         rosterLookupForLogin.current = login;
-        void lookupFromRoster({ email: login });
+        let active = true;
+        void (async () => {
+            try {
+                await lookupFromRoster({ email: login });
+            } finally {
+                if (active) setGateRosterReady(true);
+            }
+        })();
+        return () => {
+            active = false;
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per ?login= email from auth gate
     }, [searchParams]);
 
@@ -277,6 +301,17 @@ function SignupForm() {
                     setPrefillHint('');
                 }}
             />
+        );
+    }
+
+    if (!gateRosterReady) {
+        return (
+            <div className="min-h-screen bg-surface flex items-center justify-center px-6 pt-20">
+                <div className="text-center">
+                    <div className="w-12 h-12 rounded-full border-4 border-primary border-t-secondary-container animate-spin mx-auto mb-4" />
+                    <p className="text-body-md text-on-surface-variant">Looking up the member list…</p>
+                </div>
+            </div>
         );
     }
 

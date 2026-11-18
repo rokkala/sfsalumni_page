@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import BackHomeLink from '@/components/back-home-link';
 import PasswordInput from '@/components/password-input';
 import { safeRegistrationNext } from '@/lib/events/choose-event';
+import { useWaitCursor } from '@/lib/use-wait-cursor';
 
 export type UsernameFirstAuthGateProps = {
     title: string;
@@ -59,6 +60,8 @@ export function UsernameFirstAuthGate({
     const [checking, setChecking] = useState(false);
     const [signingIn, setSigningIn] = useState(false);
     const [error, setError] = useState('');
+
+    useWaitCursor(checking || signingIn);
 
     const fieldClass =
         'px-4 py-3.5 rounded-lg border border-outline-variant text-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:bg-surface-container disabled:text-on-surface-variant w-full';

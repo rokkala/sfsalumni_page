@@ -56,6 +56,7 @@ import {
     toCheckoutOrder,
     type OrderApiResponse,
 } from '@/lib/registration/payment-types';
+import { useWaitCursor } from '@/lib/use-wait-cursor';
 import {
     choicesFingerprint,
     donationFormFromPaise,
@@ -155,15 +156,27 @@ function accountContactProblem(contact: AccountContact | null): string | null {
     return null;
 }
 
+function RegistrationPageSuspenseFallback() {
+    useWaitCursor(true);
+    return (
+        <div className="min-h-screen bg-surface flex items-center justify-center pt-20">
+            <RegistrationLoadingPanel />
+        </div>
+    );
+}
+
+function RegistrationLoadingPanel() {
+    return (
+        <div className="text-center">
+            <div className="w-12 h-12 rounded-full border-4 border-primary border-t-secondary-container animate-spin mx-auto mb-4" />
+            <p className="text-body-md text-on-surface-variant">Loading...</p>
+        </div>
+    );
+}
+
 export default function RegistrationPage() {
     return (
-        <Suspense
-            fallback={
-                <div className="py-20 flex items-center justify-center">
-                    <p className="text-body-md text-on-surface-variant">Loading...</p>
-                </div>
-            }
-        >
+        <Suspense fallback={<RegistrationPageSuspenseFallback />}>
             <RegistrationPageInner />
         </Suspense>
     );
@@ -885,14 +898,13 @@ function RegistrationPageInner() {
         : 'new';
 
     const waitingOnSavedReg = Boolean(user && gate === 'ok' && event && !regHydrated);
+    const pageLoading = loading || !eventLoaded || waitingOnSavedReg;
+    useWaitCursor(pageLoading || payingOnline);
 
-    if (loading || !eventLoaded || waitingOnSavedReg) {
+    if (pageLoading) {
         return (
             <div className="min-h-screen bg-surface flex items-center justify-center pt-20">
-                <div className="text-center">
-                    <div className="w-12 h-12 rounded-full border-4 border-primary border-t-secondary-container animate-spin mx-auto mb-4"></div>
-                    <p className="text-body-md text-on-surface-variant">Loading...</p>
-                </div>
+                <RegistrationLoadingPanel />
             </div>
         );
     }
