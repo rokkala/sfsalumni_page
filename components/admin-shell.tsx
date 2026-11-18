@@ -165,6 +165,13 @@ const NAV_GROUPS: AdminNavGroup[] = [
         iconClass: 'text-jubilee-amber',
         wellClass: 'bg-jubilee-amber/12',
       },
+      {
+        href: '/admin/cashfree-transactions',
+        label: 'Cashfree reports',
+        icon: 'receipt_long',
+        iconClass: 'text-jubilee-amber',
+        wellClass: 'bg-jubilee-amber/12',
+      },
     ],
   },
   {

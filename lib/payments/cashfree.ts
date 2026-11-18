@@ -213,3 +213,161 @@ export function appBaseUrl(): string {
   if (vercel) return vercel.startsWith('http') ? vercel.replace(/\/$/, '') : `https://${vercel}`;
   return 'http://localhost:3000';
 }
+
+export type CashfreeReconEvent = {
+  event_type?: string;
+  event_status?: string;
+  event_time?: string;
+  order_id?: string;
+  order_amount?: number;
+  payment_amount?: number;
+  payment_utr?: string;
+  payment_group?: string;
+  payment_time?: string;
+  customer_name?: string;
+  customer_email?: string;
+  customer_phone?: string;
+};
+
+type ReconPage = {
+  cursor?: string | null;
+  data?: CashfreeReconEvent[];
+};
+
+/** One page of PG reconciliation (payments, refunds, settlements, etc.). */
+export async function fetchCashfreeReconPage(input: {
+  startDateIso: string;
+  endDateIso: string;
+  cursor?: string | null;
+  limit?: number;
+}): Promise<
+  | { ok: true; cursor: string | null; events: CashfreeReconEvent[] }
+  | { ok: false; status: number; message: string }
+> {
+  const limit = Math.min(200, Math.max(1, input.limit ?? 100));
+  const body = JSON.stringify({
+    pagination: {
+      limit,
+      cursor: input.cursor ?? null,
+    },
+    filters: {
+      start_date: input.startDateIso,
+      end_date: input.endDateIso,
+    },
+  });
+  const result = await cfRequest<ReconPage>('/recon', { method: 'POST', body });
+  if (!result.ok) return result;
+  const events = Array.isArray(result.data.data) ? result.data.data : [];
+  const cursor =
+    result.data.cursor === undefined || result.data.cursor === ''
+      ? null
+      : String(result.data.cursor);
+  return { ok: true, cursor, events };
+}
+
+/** ponytail: ceiling 40 pages × 200 rows; raise if committee needs full history export. */
+export async function fetchCashfreeReconRange(
+  startDateIso: string,
+  endDateIso: string,
+  maxPages = 40
+): Promise<
+  | { ok: true; events: CashfreeReconEvent[] }
+  | { ok: false; status: number; message: string }
+> {
+  const all: CashfreeReconEvent[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < maxPages; page += 1) {
+    const result = await fetchCashfreeReconPage({
+      startDateIso,
+      endDateIso,
+      cursor,
+    });
+    if (!result.ok) return result;
+    all.push(...result.events);
+    if (!result.cursor) break;
+    cursor = result.cursor;
+  }
+  return { ok: true, events: all };
+}
+
+/** One settlement batch (money credited to the merchant bank). */
+export type CashfreeSettlementBatch = {
+  cf_settlement_id?: string;
+  status?: string;
+  status_description?: string;
+  settlement_utr?: string;
+  payment_from?: string;
+  payment_till?: string;
+  settlement_initiated_on?: string;
+  settlement_processed_on?: string;
+  payment_amount?: number;
+  pg_service_charge?: number;
+  pg_service_tax?: number;
+  adjustment?: number;
+  settlement_charge?: number;
+  settlement_tax?: number;
+  amount_settled?: number;
+  settlement_type?: string;
+  order_id?: string;
+  payment_utr?: string;
+};
+
+type SettlementsPage = {
+  cursor?: string | null;
+  data?: CashfreeSettlementBatch[];
+};
+
+export async function fetchCashfreeSettlementsPage(input: {
+  startDateIso: string;
+  endDateIso: string;
+  cursor?: string | null;
+  limit?: number;
+}): Promise<
+  | { ok: true; cursor: string | null; settlements: CashfreeSettlementBatch[] }
+  | { ok: false; status: number; message: string }
+> {
+  const limit = Math.min(200, Math.max(1, input.limit ?? 50));
+  const body = JSON.stringify({
+    product: 'PG',
+    pagination: {
+      limit,
+      cursor: input.cursor ?? null,
+    },
+    filters: {
+      start_date: input.startDateIso,
+      end_date: input.endDateIso,
+    },
+  });
+  const result = await cfRequest<SettlementsPage>('/settlements', { method: 'POST', body });
+  if (!result.ok) return result;
+  const settlements = Array.isArray(result.data.data) ? result.data.data : [];
+  const cursor =
+    result.data.cursor === undefined || result.data.cursor === ''
+      ? null
+      : String(result.data.cursor);
+  return { ok: true, cursor, settlements };
+}
+
+export async function fetchCashfreeSettlementsRange(
+  startDateIso: string,
+  endDateIso: string,
+  maxPages = 40
+): Promise<
+  | { ok: true; settlements: CashfreeSettlementBatch[] }
+  | { ok: false; status: number; message: string }
+> {
+  const all: CashfreeSettlementBatch[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < maxPages; page += 1) {
+    const result = await fetchCashfreeSettlementsPage({
+      startDateIso,
+      endDateIso,
+      cursor,
+    });
+    if (!result.ok) return result;
+    all.push(...result.settlements);
+    if (!result.cursor) break;
+    cursor = result.cursor;
+  }
+  return { ok: true, settlements: all };
+}
