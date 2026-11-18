@@ -80,6 +80,7 @@ function SignupForm() {
     const [confirmMatch, setConfirmMatch] = useState<PreRegistrationData | null>(null);
     const [confirmCandidates, setConfirmCandidates] = useState<PreRegistrationData[]>([]);
     const lookupSeq = useRef(0);
+    const rosterLookupForLogin = useRef<string | null>(null);
     const router = useRouter();
     const searchParams = useSearchParams();
 
@@ -89,9 +90,7 @@ function SignupForm() {
             const next = searchParams.get('next');
             const q = next ? `?next=${encodeURIComponent(next)}` : '';
             router.replace(`/login${q}`);
-            return;
-        }
-        if (login.includes('@')) {
+        } else if (login.includes('@')) {
             setEmail((prev) => prev || login);
         } else {
             setUsername((prev) => prev || login);
@@ -115,10 +114,10 @@ function SignupForm() {
         setConfirmCandidates([]);
     }
 
-    async function lookupFromRoster() {
+    async function lookupFromRoster(overrides?: { email?: string; phoneE164?: string }) {
         if (loading || lookingUp) return;
-        const e164 = toE164(phoneIsd, phoneNational);
-        const trimmedEmail = email.trim();
+        const e164 = overrides?.phoneE164 ?? toE164(phoneIsd, phoneNational);
+        const trimmedEmail = (overrides?.email ?? email).trim();
         if (!e164 && !trimmedEmail) return;
 
         const seq = ++lookupSeq.current;
@@ -163,6 +162,15 @@ function SignupForm() {
             if (seq === lookupSeq.current) setLookingUp(false);
         }
     }
+
+    useEffect(() => {
+        const login = searchParams.get('login')?.trim();
+        if (!login || !login.includes('@')) return;
+        if (rosterLookupForLogin.current === login) return;
+        rosterLookupForLogin.current = login;
+        void lookupFromRoster({ email: login });
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per ?login= email from auth gate
+    }, [searchParams]);
 
     async function handleSignup(e: React.FormEvent) {
         e.preventDefault();
