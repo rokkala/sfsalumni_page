@@ -9,7 +9,7 @@
 'use client';
 
 import { Suspense, useEffect, useState, type FormEvent } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import { normalizePhoneNumber, phoneValidationError, splitE164 } from '@/lib/phone';
 import {
@@ -35,6 +35,7 @@ import {
     ChooseEventScreen,
     ConfirmPrefillScreen,
     EventUnavailableScreen,
+    LegacySignInScreen,
     SignInScreen,
 } from '@/components/registration_page/registration-screens';
 import {
@@ -204,6 +205,9 @@ function RegistrationPageInner() {
     const [regHydrated, setRegHydrated] = useState(false);
 
     const searchParams = useSearchParams();
+    const pathname = usePathname() || '';
+    const newRegistrationGate =
+        pathname === '/new_registration' || pathname.startsWith('/new_registration/');
     const supabase = createClient();
 
     useEffect(() => {
@@ -901,7 +905,13 @@ function RegistrationPageInner() {
 
     if (eventError && !event) return <EventUnavailableScreen message={eventError} />;
 
-    if (!user) return <SignInScreen event={event} />;
+    if (!user) {
+        return newRegistrationGate ? (
+            <SignInScreen event={event} />
+        ) : (
+            <LegacySignInScreen event={event} />
+        );
+    }
 
     const incompleteBanner = !isSettled ? (
         <div

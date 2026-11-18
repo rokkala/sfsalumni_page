@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import JubileeNewRegistrationLink from '@/components/jubilee-new-registration-link';
 import JubileeRegisterLink from '@/components/jubilee-register-link';
 import {
   eventActionFromRegistration,
@@ -173,14 +174,22 @@ export default function Hero() {
               )}
               <div className="flex flex-wrap items-center gap-4">
                 {slide.id === 'fallback' || !action ? (
-                  <JubileeRegisterLink variant="hero" />
+                  <>
+                    <JubileeRegisterLink variant="hero" />
+                    <JubileeNewRegistrationLink variant="hero" />
+                  </>
                 ) : (
-                  <Link href={action.href} className={registerClass}>
-                    <span className="material-symbols-outlined text-[18px]">
-                      {action.kind === 'view' ? 'event_available' : 'how_to_reg'}
-                    </span>
-                    {action.label}
-                  </Link>
+                  <>
+                    <Link href={action.href} className={registerClass}>
+                      <span className="material-symbols-outlined text-[18px]">
+                        {action.kind === 'view' ? 'event_available' : 'how_to_reg'}
+                      </span>
+                      {action.label}
+                    </Link>
+                    {action.kind === 'register' ? (
+                      <JubileeNewRegistrationLink variant="hero" eventId={slide.id} />
+                    ) : null}
+                  </>
                 )}
                 {slide.instagramUrl ? (
                   <a

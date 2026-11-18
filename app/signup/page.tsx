@@ -1,7 +1,7 @@
 // app/(auth)/signup/page.tsx
 'use client';
 
-import { Suspense, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { safeRegistrationNext } from '@/lib/events/choose-event';
@@ -82,6 +82,16 @@ function SignupForm() {
     const lookupSeq = useRef(0);
     const router = useRouter();
     const searchParams = useSearchParams();
+
+    useEffect(() => {
+        const login = searchParams.get('login')?.trim();
+        if (!login) return;
+        if (login.includes('@')) {
+            setEmail((prev) => prev || login);
+        } else {
+            setUsername((prev) => prev || login);
+        }
+    }, [searchParams]);
 
     function applyRosterMatch(match: PreRegistrationData) {
         const names = namesFromRoster(match);

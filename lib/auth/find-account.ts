@@ -7,6 +7,8 @@ function missingColumn(error: { code?: string; message?: string } | null): boole
   return error.code === 'PGRST204' || error.code === '42703' || /column/i.test(message);
 }
 
+export type LoginAccountRow = { id: string; email: string; password_hash: string };
+
 export type RecoverAccountRow = {
   id: string;
   email: string;
@@ -20,6 +22,39 @@ export type RecoverAccountRow = {
 
 const RECOVER_SELECT =
   'id,email,phone_number,batch,recovery_q1,recovery_a1_hash,recovery_q2,recovery_a2_hash';
+
+/** Lookup by username, then email. Used at login and for “account exists?” checks. */
+export async function findAccountForLogin(
+  admin: ReturnType<typeof createAdminClient>,
+  loginId: string
+): Promise<LoginAccountRow | null> {
+  const byUsername = await admin
+    .from('alumni_accounts')
+    .select('id,email,password_hash')
+    .eq('username', loginId)
+    .maybeSingle();
+  if (!byUsername.error && byUsername.data) return byUsername.data as LoginAccountRow;
+
+  if (!byUsername.error || !missingColumn(byUsername.error)) {
+    if (loginId.includes('@')) {
+      const byEmail = await admin
+        .from('alumni_accounts')
+        .select('id,email,password_hash')
+        .eq('email', loginId)
+        .maybeSingle();
+      return (byEmail.data as LoginAccountRow | null) || null;
+    }
+    return null;
+  }
+
+  // ponytail: scans accounts when the username column is not applied yet. Upgrade path is the unique index.
+  const { data } = await admin.from('alumni_accounts').select('id,email,password_hash,bio');
+  const match = (data || []).find((row) => {
+    if (row.email === loginId) return true;
+    return readPackedProfile(row.bio)?.username === loginId;
+  });
+  return (match as LoginAccountRow | undefined) || null;
+}
 
 /** Lookup by username, then email. Used by login-adjacent recover flows. */
 export async function findAccountForRecover(
