@@ -364,16 +364,11 @@ export async function applyRegistrationPayment(input: {
   return settle(admin, registration, { paymentPaise: feeDue + donationDue });
 }
 
-/** Admin: clears payment on the fee and the donation. A ₹0 registration has nothing to clear. */
+/** Admin: clears payment on the fee and any linked donation (including fee-free registrations with a donation). */
 export async function markRegistrationUnpaid(registrationId: string): Promise<UnpaidResult> {
   const admin = createAdminClient();
   const registration = await loadRegistration(admin, registrationId);
   if (!registration) return { ok: false, status: 404, error: 'Registration not found' };
-
-  const total = Math.max(0, Number(registration.total_cost_paise) || 0);
-  if (total === 0) {
-    return { ok: false, status: 400, error: 'This registration has no fee to mark unpaid' };
-  }
 
   const now = new Date().toISOString();
   const { error: registrationError } = await admin
