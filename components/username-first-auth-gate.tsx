@@ -45,6 +45,19 @@ function resolvePostLoginDest(
 
 type Step = 'identifier' | 'password';
 
+function alreadyOnCommitteeLogin(
+    postLoginNext: string | null | undefined,
+    loginId: string
+): boolean {
+    if (typeof window === 'undefined') return false;
+    if (window.location.pathname !== '/login') return false;
+    const next = new URLSearchParams(window.location.search).get('next');
+    if (next === '/admin' || safeRegistrationNext(postLoginNext) === '/admin') return true;
+  // Same URL reloaded after admin redirect from registration/signup
+    const boundLogin = new URLSearchParams(window.location.search).get('login')?.trim();
+    return Boolean(boundLogin && boundLogin.toLowerCase() === loginId.toLowerCase());
+}
+
 export function UsernameFirstAuthGate({
     title,
     identifierLead,
@@ -82,7 +95,7 @@ export function UsernameFirstAuthGate({
                 const payload = await res.json().catch(() => ({}));
                 if (!active) return;
                 if (res.ok && payload.exists) {
-                    if (payload.role === 'admin') {
+                    if (payload.role === 'admin' && !alreadyOnCommitteeLogin(postLoginNext, seed)) {
                         const params = new URLSearchParams({ login: seed, next: '/admin' });
                         window.location.replace(`/login?${params.toString()}`);
                         return;
@@ -123,7 +136,7 @@ export function UsernameFirstAuthGate({
                 return;
             }
             if (payload.exists) {
-                if (payload.role === 'admin') {
+                if (payload.role === 'admin' && !alreadyOnCommitteeLogin(postLoginNext, trimmed)) {
                     const params = new URLSearchParams({ login: trimmed, next: '/admin' });
                     window.location.replace(`/login?${params.toString()}`);
                     return;
