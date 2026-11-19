@@ -10,6 +10,7 @@ import {
   normalizeUpiRefNoInput,
   normalizeUpiTransactionId,
   shortUpiPaymentRef,
+  upiMemberRef,
   validateBankAccountFields,
 } from '../lib/payments/bank-details.ts';
 import {
@@ -63,6 +64,22 @@ if (qTr.get('tr') !== 'SFS-4K7M2') throw new Error(`tr code ${qTr.get('tr')}`);
 if (qTr.get('tn') !== 'SFS-4K7M2') throw new Error(`tn code ${qTr.get('tn')}`);
 if (qTr.get('pn') !== 'SFS-4K7M2') throw new Error(`pn code ${qTr.get('pn')}`);
 if (normalizeUpiTransactionId('a'.repeat(40)).length !== 35) throw new Error('tr max len');
+
+const uuid = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+const uriUuid = buildUpiPayUri({
+  upiId: 'alumni@okaxis',
+  amountPaise: 100,
+  payeeName: 'SFS Alumni',
+  transactionId: uuid,
+});
+const qUuid = new URL(String(uriUuid).replace('upi://pay?', 'https://u/?')).searchParams;
+const memberRef = upiMemberRef(uuid);
+if (memberRef.display !== 'SFSa1b2c3d4') throw new Error(`display ${memberRef.display}`);
+if (qUuid.get('tn') !== memberRef.display) throw new Error('QR tn must match UI display');
+const memberCode = upiMemberRef('SFS-4K7M2');
+if (memberCode.display !== 'SFS-4K7M2' || memberCode.tr !== 'SFS-4K7M2') {
+  throw new Error('paid reg code in UPI');
+}
 
 const okAccount = validateBankAccountFields({
   label: 'Jubilee',

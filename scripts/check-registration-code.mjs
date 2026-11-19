@@ -22,6 +22,11 @@ assert(alphabet.length === 32, 'alphabet is 32 glyphs');
 assert(normalizeRegistrationCode(' sfs-4k7m2 ') === 'SFS-4K7M2', 'normalizes case and spaces');
 assert(normalizeRegistrationCode('4k7m2') === 'SFS-4K7M2', 'adds the SFS prefix');
 assert(normalizeRegistrationCode('') === '', 'blank stays blank');
+assert(
+  normalizeRegistrationCode('a1b2c3d4-e5f6-7890-abcd-ef1234567890') === '',
+  'registration UUID is not an entry code'
+);
+assert(normalizeRegistrationCode('4k7m2extra') === '', 'reject long bodies');
 
 assert(shouldIssueRegistrationCode('paid', null) === true, 'full payment with no code gets one');
 assert(shouldIssueRegistrationCode('paid', 'SFS-ABCDE') === false, 'existing code is kept');

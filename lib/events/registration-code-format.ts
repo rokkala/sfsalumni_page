@@ -7,5 +7,6 @@ export function normalizeRegistrationCode(raw: string): string {
     .replace(/[^A-Z0-9]/g, '');
   if (!compact) return '';
   const body = compact.startsWith('SFS') ? compact.slice(3) : compact;
-  return body ? `SFS-${body}` : '';
+  if (body.length !== 5) return '';
+  return `SFS-${body}`;
 }

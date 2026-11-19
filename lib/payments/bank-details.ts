@@ -90,6 +90,19 @@ export function shortUpiPaymentRef(fullRegistrationRef: string): string {
   return `SFS${hex.slice(0, 8)}`;
 }
 
+/** Same rules as {@link buildUpiPayUri} — use for UI that must match the QR `tr` / `tn`. */
+export function upiMemberRef(transactionId: string | undefined | null): {
+  tr: string;
+  display: string;
+} {
+  const raw = String(transactionId ?? '').trim();
+  if (!raw) return { tr: '', display: '' };
+  const regCode = normalizeSfsEntryCode(raw);
+  const tr = regCode || normalizeUpiTransactionId(raw);
+  const display = regCode || (tr ? shortUpiPaymentRef(tr) : '');
+  return { tr, display };
+}
+
 function upiQueryValue(raw: string): string {
   return encodeURIComponent(raw).replace(/%20/g, '+');
 }

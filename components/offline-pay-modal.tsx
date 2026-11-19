@@ -6,13 +6,11 @@ import { ModalCloseButton, ModalOverlay } from '@/components/modal-shell';
 import {
   buildUpiPayUri,
   normalizeUpiRefNoInput,
-  normalizeUpiTransactionId,
-  shortUpiPaymentRef,
+  upiMemberRef,
   UPI_REF_NO_LEN,
   UPI_REF_NO_PATTERN,
   type BankAccountPublic,
 } from '@/lib/payments/bank-details';
-import { normalizeRegistrationCode } from '@/lib/events/registration-code-format';
 import {
   REMITTANCE_METHODS,
   remittanceMethodLabel,
@@ -120,10 +118,7 @@ export default function OfflinePayModal({
       ? { idle: 'Pay', busy: 'Paying…' }
       : { idle: 'Submit for verification', busy: 'Submitting…' };
 
-  const upiTr =
-    (transactionId && normalizeRegistrationCode(transactionId)) ||
-    (transactionId ? normalizeUpiTransactionId(transactionId) : '');
-  const upiTrShort = upiTr.includes('-') ? upiTr : upiTr ? shortUpiPaymentRef(upiTr) : '';
+  const { tr: upiTr, display: upiTrShort } = upiMemberRef(transactionId);
 
   const upiMethodAllowed =
     Boolean(account.upi_id) &&
@@ -533,7 +528,7 @@ export default function OfflinePayModal({
                     <p className="text-sm text-on-surface-variant">Preparing QR…</p>
                   )}
                   <p className="text-sm text-on-surface-variant mt-2 break-all">{account.upi_id}</p>
-                  {upiTr ? (
+                  {upiTrShort ? (
                     <div className="mt-3 rounded-lg border border-outline-variant/80 bg-surface px-3 py-2 text-left">
                       <p className="text-xs uppercase tracking-wider text-on-surface-variant">
                         SFS id (in payment description)
@@ -546,7 +541,7 @@ export default function OfflinePayModal({
                       </p>
                       <button
                         type="button"
-                        onClick={() => void onCopy('reg-ref', upiTr)}
+                        onClick={() => void onCopy('reg-ref', upiTrShort)}
                         className="mt-2 rounded-lg px-2 py-1 text-xs font-bold uppercase text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
                       >
                         {copied === 'reg-ref' ? 'Copied' : 'Copy ref'}
