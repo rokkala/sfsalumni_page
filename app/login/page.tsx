@@ -17,6 +17,7 @@ function LoginGate() {
     const searchParams = useSearchParams();
     const next = searchParams.get('next');
     const signupNext = safeRegistrationNext(next) || '/member';
+    const initialLoginId = searchParams.get('login')?.trim() || searchParams.get('email')?.trim() || null;
 
     return (
         <UsernameFirstAuthGate
@@ -28,6 +29,7 @@ function LoginGate() {
             defaultDest="/member"
             signupNext={signupNext}
             postLoginNext={next}
+            initialLoginId={initialLoginId}
         />
     );
 }

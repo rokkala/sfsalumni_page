@@ -112,11 +112,39 @@ function SignupForm() {
             const next = searchParams.get('next');
             const q = next ? `?next=${encodeURIComponent(next)}` : '';
             router.replace(`/login${q}`);
-        } else if (login.includes('@')) {
-            setEmail((prev) => prev || login);
-        } else {
-            setUsername((prev) => prev || login);
+            return;
         }
+
+        let active = true;
+        (async () => {
+            const res = await fetch('/api/auth/lookup', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ username: login }),
+            });
+            const payload = await res.json().catch(() => ({}));
+            if (!active) return;
+            if (res.ok && payload.exists) {
+                const params = new URLSearchParams();
+                params.set('login', login);
+                const next = searchParams.get('next');
+                if (next) {
+                    params.set('next', payload.role === 'admin' ? '/admin' : next);
+                } else if (payload.role === 'admin') {
+                    params.set('next', '/admin');
+                }
+                router.replace(`/login?${params.toString()}`);
+                return;
+            }
+            if (login.includes('@')) {
+                setEmail((prev) => prev || login);
+            } else {
+                setUsername((prev) => prev || login);
+            }
+        })();
+        return () => {
+            active = false;
+        };
     }, [searchParams, router]);
 
     function applyRosterMatch(match: PreRegistrationData) {
@@ -349,6 +377,13 @@ function SignupForm() {
                     <h1 className="text-headline-lg text-primary mb-2">Create Your Account</h1>
                     <p className="text-body-sm text-on-surface-variant">
                         Register for the reunion and join the celebration
+                    </p>
+                    <p className="text-body-sm text-on-surface-variant mt-3">
+                        Committee administrator?{' '}
+                        <Link href="/login?next=%2Fadmin" className="text-primary underline-offset-2 hover:underline">
+                            Sign in here
+                        </Link>{' '}
+                        (reunion registration does not apply).
                     </p>
                 </div>
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import BackHomeLink from '@/components/back-home-link';
@@ -23,6 +23,8 @@ export type UsernameFirstAuthGateProps = {
     signupNext: string;
   /** Optional ?next= from the URL for post-login */
     postLoginNext?: string | null;
+  /** Pre-filled identifier (?login= / ?email=); advances to password when the account exists */
+    initialLoginId?: string | null;
 };
 
 function resolvePostLoginDest(
@@ -52,6 +54,7 @@ export function UsernameFirstAuthGate({
     defaultDest,
     signupNext,
     postLoginNext,
+    initialLoginId,
 }: UsernameFirstAuthGateProps) {
     const router = useRouter();
     const [step, setStep] = useState<Step>('identifier');
@@ -62,6 +65,33 @@ export function UsernameFirstAuthGate({
     const [error, setError] = useState('');
 
     useWaitCursor(checking || signingIn);
+
+    useEffect(() => {
+        const seed = initialLoginId?.trim();
+        if (!seed) return;
+        let active = true;
+        setLoginId(seed);
+        setChecking(true);
+        (async () => {
+            try {
+                const res = await fetch('/api/auth/lookup', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ username: seed }),
+                });
+                const payload = await res.json().catch(() => ({}));
+                if (!active) return;
+                if (res.ok && payload.exists) {
+                    setStep('password');
+                }
+            } finally {
+                if (active) setChecking(false);
+            }
+        })();
+        return () => {
+            active = false;
+        };
+    }, [initialLoginId]);
 
     const fieldClass =
         'px-4 py-3.5 rounded-lg border border-outline-variant text-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:bg-surface-container disabled:text-on-surface-variant w-full';
@@ -89,6 +119,9 @@ export function UsernameFirstAuthGate({
             }
             if (payload.exists) {
                 setStep('password');
+                if (payload.role === 'admin' && signupNext.includes('registration')) {
+                    setError('Committee account — enter your password. You will not register as an alumnus.');
+                }
                 setChecking(false);
                 return;
             }
@@ -122,7 +155,11 @@ export function UsernameFirstAuthGate({
             }
 
             const meRes = await fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store' });
-            const me = meRes.ok ? await meRes.json() : null;
+            let me = meRes.ok ? ((await meRes.json()) as JubileeAccountHint) : null;
+            if (!me) {
+                const retry = await fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store' });
+                me = retry.ok ? ((await retry.json()) as JubileeAccountHint) : null;
+            }
             const dest = resolvePostLoginDest(me, postLoginNext, defaultDest);
             window.location.assign(dest);
         } catch {
