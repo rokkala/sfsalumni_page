@@ -21,5 +21,8 @@ export function safeRegistrationNext(next: string | null | undefined): string | 
   if (next === '/admin-app' || next.startsWith('/admin-app/') || next.startsWith('/admin-app?')) {
     return next;
   }
+  if (next === '/admin' || next.startsWith('/admin/') || next.startsWith('/admin?')) {
+    return next;
+  }
   return null;
 }
