@@ -89,7 +89,7 @@ export default function JubileeNewRegistrationLink({
       className={`${styles[variant]} ${className}`.trim()}
     >
       <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
-      New registration
+      Registration
     </Link>
   );
 }

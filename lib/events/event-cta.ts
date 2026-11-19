@@ -1,7 +1,8 @@
 // lib/events/event-cta.ts
 // CTA for an event card or hero slide when the signed-in alumni may already be registered.
 // Guests and alumni with no row still see Register. Settled registrations point at details.
-// Keep href format in sync with registrationPath in lib/events/choose-event.ts.
+// Register kind uses newRegistrationPath; continue/view use registrationPath — lib/events/choose-event.ts.
+import { newRegistrationPath, registrationPath } from './choose-event.ts';
 
 export type EventRegistrationHint = {
   payment_status?: string | null;
@@ -45,16 +46,20 @@ export function eventActionFromRegistration(
   eventId: string,
   registration: EventRegistrationHint | null | undefined
 ): EventAction {
-  const href = `/registration?event=${encodeURIComponent(eventId)}`;
+  const hrefContinue = registrationPath(eventId);
   if (!registration) {
-    return { kind: 'register', label: 'Register', href };
+    return {
+      kind: 'register',
+      label: 'Registration',
+      href: newRegistrationPath(eventId),
+    };
   }
   if (isSettled(registration)) {
-    return { kind: 'view', label: 'View event details', href };
+    return { kind: 'view', label: 'View event details', href: hrefContinue };
   }
   return {
     kind: 'continue',
     label: continueLabel(proofPending(registration)),
-    href,
+    href: hrefContinue,
   };
 }

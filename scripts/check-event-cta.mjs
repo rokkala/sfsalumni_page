@@ -11,7 +11,8 @@ const id = 'evt-1';
 
 const none = eventActionFromRegistration(id, null);
 assert(none.kind === 'register', 'no registration → register');
-assert(none.label === 'Register', 'register label');
+assert(none.label === 'Registration', 'registration label');
+assert(none.href.includes('/new_registration'), 'new registration path');
 assert(none.href.includes('event=evt-1'), 'href carries event id');
 
 const paid = eventActionFromRegistration(id, {
