@@ -537,7 +537,7 @@ export default function OfflinePayModal({
                       <p className="text-xs text-on-surface-variant mt-1">
                         {source.type === 'donation'
                           ? 'Put this in your bank narration so the committee can match your gift.'
-                          : 'Put this in your bank narration for committee recon. Your pass works at the gate after payment is confirmed.'}
+                          : 'Use this exact Reg ID in the UPI note (same as SFS-XXXXX on your pass after payment is confirmed).'}
                       </p>
                       <button
                         type="button"

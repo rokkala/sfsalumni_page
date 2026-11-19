@@ -28,6 +28,7 @@ import {
   clearRegistrationCode,
   isEligibleForRegistrationCode,
   readRegistrationCode,
+  reserveUpiPaymentCode,
   type RegistrationCodeAdmin,
 } from '@/lib/events/registration-code';
 import { registrationQrPayload } from '@/lib/events/registration-qr-payload';
@@ -278,7 +279,8 @@ export async function getAccountRegistrationForEvent(
 
   const guestCountLoad = clampGuestCount(Number(reg.number_of_guests) || 0);
   const attendingLoad = reg.attending === true;
-  if (!needsVenuePass(attendingLoad, guestCountLoad)) {
+  const venuePass = needsVenuePass(attendingLoad, guestCountLoad);
+  if (!venuePass) {
     await clearRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id);
   }
   const regSnap: import('@/lib/events/mark-paid').RegistrationSnapshot = {
@@ -294,15 +296,17 @@ export async function getAccountRegistrationForEvent(
     razorpay_order_id: null,
     razorpay_payment_id: null,
   };
+  await reserveUpiPaymentCode(admin as unknown as RegistrationCodeAdmin, reg.id, {
+    venuePass,
+    amountDuePaise: feeDue + donationDue,
+  });
   await issueRegistrationCodeIfEligible(admin, reg.id, {
     ...passEligibilityFromRegistration(regSnap, donationDue),
     paymentStatus: reg.payment_status,
   });
-  const registrationCode = visibleRegistrationCode(
-    await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id),
-    regSnap,
-    donationDue
-  );
+  const storedCode = await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id);
+  const registrationCode = visibleRegistrationCode(storedCode, regSnap, donationDue);
+  const upi_payment_ref = venuePass ? storedCode || String(reg.id) : String(reg.id);
   const passReady = isEligibleForRegistrationCode({
     paymentStatus: reg.payment_status,
     donationDuePaise: donationDue,
@@ -322,6 +326,7 @@ export async function getAccountRegistrationForEvent(
         total_due_paise: passReady ? 0 : feeDue + donationDue,
         committee_confirmed: passReady,
         registration_code: registrationCode,
+        upi_payment_ref,
         registration_qr: registrationCode
           ? registrationQrPayload(registrationCode, reg.id)
           : null,
@@ -529,7 +534,8 @@ export async function registerAccountForEvent(
   }
   if (!regId) return { status: 500, payload: { error: 'Could not save registration' } };
 
-  if (!needsVenuePass(attending, guestCount)) {
+  const venuePass = needsVenuePass(attending, guestCount);
+  if (!venuePass) {
     await clearRegistrationCode(admin as unknown as RegistrationCodeAdmin, regId);
   }
   const snap = {
@@ -545,15 +551,18 @@ export async function registerAccountForEvent(
     razorpay_order_id: null,
     razorpay_payment_id: null,
   } satisfies import('@/lib/events/mark-paid').RegistrationSnapshot;
+  const totalDueBeforeJubilee = feeDue + donationDue;
+  await reserveUpiPaymentCode(admin as unknown as RegistrationCodeAdmin, regId, {
+    venuePass,
+    amountDuePaise: totalDueBeforeJubilee,
+  });
   await issueRegistrationCodeIfEligible(admin, regId, {
     ...passEligibilityFromRegistration(snap, donationDue),
     paymentStatus: payment_status,
   });
-  const registrationCode = visibleRegistrationCode(
-    await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, regId),
-    snap,
-    donationDue
-  );
+  const storedCode = await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, regId);
+  const registrationCode = visibleRegistrationCode(storedCode, snap, donationDue);
+  const upi_payment_ref = venuePass ? storedCode || regId : regId;
 
   const fullName = String(body.full_name || '').trim() || me.full_name;
   const lastName = String(body.last_name || '').trim();
@@ -565,7 +574,7 @@ export async function registerAccountForEvent(
   const country = String(body.country || '').trim();
   const location = formatLocation(city, country) || me.current_location || null;
 
-  const totalDue = feeDue + donationDue;
+  const totalDue = totalDueBeforeJubilee;
   const jubilee = catalog.is_primary
     ? totalDue > 0
       ? 'pending_payment'
@@ -625,6 +634,7 @@ export async function registerAccountForEvent(
       total_due_paise: totalDue,
       jubilee_reg_status: jubilee,
       registration_code: registrationCode,
+      upi_payment_ref,
       registration_qr: registrationCode ? registrationQrPayload(registrationCode, regId) : null,
       event_fee_payment_label: formatEventFeePaymentLabel({
         attending,

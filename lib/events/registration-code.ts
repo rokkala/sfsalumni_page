@@ -102,6 +102,19 @@ export async function issueMissingPaidCodes(admin: RegistrationCodeAdmin): Promi
   }
 }
 
+/** Assigns SFS-XXXXX before payment when money is still due so UPI notes match the gate code. */
+export async function reserveUpiPaymentCode(
+  admin: RegistrationCodeAdmin,
+  registrationId: string,
+  input: { venuePass: boolean; amountDuePaise: number }
+): Promise<string | null> {
+  if (!input.venuePass) return null;
+  if (input.amountDuePaise <= 0) {
+    return readRegistrationCode(admin, registrationId);
+  }
+  return reserveRegistrationCode(admin, registrationId);
+}
+
 /** Reserves SFS-XXXXX only when a venue pass will be needed (not donation-only). */
 export async function reserveRegistrationCode(
   admin: RegistrationCodeAdmin,

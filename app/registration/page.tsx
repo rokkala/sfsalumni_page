@@ -85,6 +85,7 @@ interface LoadedRegistration {
     bankReference: string;
     pendingProof: PendingProofState | null;
     registrationCode: string | null;
+    upiPaymentRef: string | null;
 }
 
 function formFromPrefill(prefill: RegistrationPrefill): FormData {
@@ -200,6 +201,8 @@ function RegistrationPageInner() {
     const [committeeConfirmed, setCommitteeConfirmed] = useState(false);
     const [registrationId, setRegistrationId] = useState<string | null>(null);
     const [registrationCode, setRegistrationCode] = useState<string | null>(null);
+    /** SFS-XXXXX reserved for UPI before payment (may differ from hidden pass code until paid). */
+    const [upiPaymentRef, setUpiPaymentRef] = useState<string | null>(null);
     /** Bank / UPI reference as last submitted for verification. */
     const [savedBankReference, setSavedBankReference] = useState('');
     const [pendingProof, setPendingProof] = useState<PendingProofState | null>(null);
@@ -445,6 +448,7 @@ function RegistrationPageInner() {
             setHasSavedReg(false);
             setRegistrationId(null);
             setRegistrationCode(null);
+            setUpiPaymentRef(null);
             setMoney(EMPTY_MONEY);
             setCommitteeConfirmed(false);
             setSavedBankReference('');
@@ -473,6 +477,11 @@ function RegistrationPageInner() {
                 ? reg.registration_code.trim()
                 : null;
         setRegistrationCode(code);
+        const payRef =
+            typeof reg.upi_payment_ref === 'string' && reg.upi_payment_ref.trim()
+                ? reg.upi_payment_ref.trim()
+                : code || id || null;
+        setUpiPaymentRef(payRef);
         setMoney(next);
         setCommitteeConfirmed(confirmed);
         setSavedBankReference(
@@ -514,6 +523,7 @@ function RegistrationPageInner() {
             bankReference,
             pendingProof: settled ? null : nextPending,
             registrationCode: code,
+            upiPaymentRef: payRef,
         };
     }
 
@@ -722,7 +732,7 @@ function RegistrationPageInner() {
         let regId = registrationId;
         if (pendingProof) {
             if (!regId) return { error: 'Could not find your registration. Please try again.' };
-            const ref = registrationCode?.trim() || regId;
+            const ref = upiPaymentRef?.trim() || registrationCode?.trim() || regId;
             return { registrationId: regId, transactionRef: ref };
         }
         if (formDirty || !regId) {
@@ -731,12 +741,12 @@ function RegistrationPageInner() {
             regId = loaded.id;
         }
         if (!regId) return { error: 'Could not find your registration. Please try again.' };
-        let code = registrationCode?.trim() || '';
-        if (!code) {
+        let ref = upiPaymentRef?.trim() || registrationCode?.trim() || '';
+        if (!ref) {
             const reloaded = await loadSavedRegistration(event!.id, false);
-            code = reloaded?.registrationCode?.trim() || '';
+            ref = reloaded?.upiPaymentRef?.trim() || reloaded?.registrationCode?.trim() || '';
         }
-        return { registrationId: regId, transactionRef: code || regId };
+        return { registrationId: regId, transactionRef: ref || regId };
     }
 
     async function payRegistrationOnline() {

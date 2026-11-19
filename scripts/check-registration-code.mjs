@@ -3,6 +3,7 @@ import {
   clearRegistrationCode,
   ensureRegistrationCode,
   reserveRegistrationCode,
+  reserveUpiPaymentCode,
   isEligibleForRegistrationCode,
   normalizeRegistrationCode,
   registrationCodeFrom,
@@ -127,6 +128,20 @@ assert(partial.state.writes === 0, 'partial does not update');
 assert(
   (await reserveRegistrationCode(memoryAdmin(null).api, 'id', () => 'SFS-SAVE1')) === 'SFS-SAVE1',
   'reserve at save for UPI description'
+);
+assert(
+  (await reserveUpiPaymentCode(memoryAdmin(null).api, 'id', {
+    venuePass: true,
+    amountDuePaise: 100_00,
+  })) === 'SFS-SAVE1',
+  'reserveUpiPaymentCode issues ref while due'
+);
+assert(
+  (await reserveUpiPaymentCode(memoryAdmin(null).api, 'id', {
+    venuePass: false,
+    amountDuePaise: 100_00,
+  })) === null,
+  'no venue pass — no UPI reg id'
 );
 
 const missing = memoryAdmin(null);
