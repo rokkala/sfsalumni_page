@@ -130,7 +130,7 @@ export async function POST(request: Request) {
       donation_id: donation?.id ?? '',
       account_id: me.id,
     },
-    note: 'Golden Jubilee registration',
+    note: 'SFS Alumni Meet 2026 Donation',
   });
 
   if (!created.ok) {
