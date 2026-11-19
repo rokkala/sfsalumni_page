@@ -24,6 +24,11 @@ export function normalizeEmail(email: string): string {
     .toLowerCase();
 }
 
+export function isValidEmailShape(email: string): boolean {
+  const normalized = normalizeEmail(email);
+  return Boolean(normalized && EMAIL_SHAPE.test(normalized));
+}
+
 export function isPublicEmail(email: string): boolean {
   const normalized = normalizeEmail(email);
   if (!normalized || !EMAIL_SHAPE.test(normalized)) return false;
