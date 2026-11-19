@@ -72,16 +72,36 @@ export default function AdminAdminsPage() {
         return;
       }
       const temp = String(payload.temporaryPassword || '');
+      const hint = String(payload.loginHint || '');
       setMessage(
-        temp
-          ? `Admin ${payload.admin?.full_name || 'account'} created. Initial password: ${temp} — share offline.`
-          : `Admin ${payload.admin?.full_name || 'account'} created.`
+        [temp ? `Password: ${temp} — share offline.` : null, hint || null, 'They sign in at /login, then land on /admin (not registration).']
+          .filter(Boolean)
+          .join(' ')
       );
       if (temp && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(temp).catch(() => undefined);
       }
       setForm(EMPTY_FORM);
       setShowForm(false);
+      await loadAdmins();
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function repairAdmins() {
+    if (!window.confirm('Fix login fields (username, profile) on all admin accounts?')) return;
+    setBusy('repair');
+    setMessage('');
+    setError('');
+    try {
+      const res = await fetch('/api/admin/admins/repair', { method: 'POST' });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(payload.error || 'Repair failed');
+        return;
+      }
+      setMessage(`Repaired ${payload.repaired ?? 0} of ${payload.total ?? 0} admin account(s).`);
       await loadAdmins();
     } finally {
       setBusy('');
@@ -192,6 +212,14 @@ export default function AdminAdminsPage() {
             className="rounded-lg bg-primary text-on-primary px-5 py-3 text-label-md uppercase tracking-wider cursor-pointer hover:bg-primary-container"
           >
             {showForm ? 'Cancel' : 'Create admin'}
+          </button>
+          <button
+            type="button"
+            disabled={busy === 'repair'}
+            onClick={() => void repairAdmins()}
+            className="rounded-lg border border-primary/20 bg-surface-ivory text-primary px-5 py-3 text-label-md uppercase tracking-wider cursor-pointer hover:bg-secondary-container/30 disabled:opacity-50"
+          >
+            {busy === 'repair' ? 'Repairing…' : 'Repair login setup'}
           </button>
         </div>
       ) : null}

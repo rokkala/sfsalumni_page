@@ -83,7 +83,8 @@ export async function POST(request: Request) {
 
     const nameParts = fullName.split(/\s+/);
     const first = firstName || nameParts[0] || fullName;
-    const last = lastName || (nameParts.length > 1 ? nameParts.slice(1).join(' ') : '—');
+    const last =
+      lastName || (nameParts.length > 1 ? nameParts.slice(1).join(' ') : first);
 
     const admin = createAdminClient();
     const { data: emailOwner } = await admin
@@ -139,11 +140,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Could not create admin account' }, { status: 500 });
     }
 
+    const accountId = inserted.data.id;
+    const patchRow = { username, first_name: first, last_name: last };
+    let profilePatch = await admin.from('alumni_accounts').update(patchRow).eq('id', accountId);
+    if (missingColumn(profilePatch.error)) {
+      profilePatch = await admin
+        .from('alumni_accounts')
+        .update({ username })
+        .eq('id', accountId);
+    }
+    if (profilePatch.error && !missingColumn(profilePatch.error)) {
+      console.error('admin create profile patch', profilePatch.error);
+    }
+
+    const loginUsername = username.includes('@') ? email : username;
+
     return NextResponse.json(
       {
         ok: true,
-        admin: inserted.data,
+        admin: { ...inserted.data, username: loginUsername },
         temporaryPassword: password,
+        loginHint: `Sign in at /login with email ${email} or username ${loginUsername}`,
       },
       { status: 201 }
     );

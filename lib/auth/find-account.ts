@@ -1,3 +1,4 @@
+import { normalizeEmail } from '@/lib/email';
 import { readPackedProfile } from '@/lib/registration/registration-fields';
 import { createAdminClient } from '@/lib/supabase-admin';
 
@@ -36,21 +37,30 @@ export async function findAccountForLogin(
   if (!byUsername.error && byUsername.data) return byUsername.data as LoginAccountRow;
 
   if (!byUsername.error || !missingColumn(byUsername.error)) {
-    if (loginId.includes('@')) {
+    const normalizedEmail = normalizeEmail(loginId);
+    if (normalizedEmail.includes('@')) {
       const byEmail = await admin
         .from('alumni_accounts')
         .select('id,email,password_hash')
-        .eq('email', loginId)
+        .eq('email', normalizedEmail)
         .maybeSingle();
-      return (byEmail.data as LoginAccountRow | null) || null;
+      if (byEmail.data) return byEmail.data as LoginAccountRow;
     }
-    return null;
+
+    const { data } = await admin.from('alumni_accounts').select('id,email,password_hash,bio,username');
+    const match = (data || []).find((row) => {
+      if (normalizeEmail(String(row.email || '')) === normalizedEmail) return true;
+      const stored = String((row as { username?: string }).username || '').toLowerCase();
+      if (stored && stored === loginId) return true;
+      return readPackedProfile(row.bio)?.username === loginId;
+    });
+    return (match as LoginAccountRow | undefined) || null;
   }
 
   // ponytail: scans accounts when the username column is not applied yet. Upgrade path is the unique index.
   const { data } = await admin.from('alumni_accounts').select('id,email,password_hash,bio');
   const match = (data || []).find((row) => {
-    if (row.email === loginId) return true;
+    if (normalizeEmail(String(row.email || '')) === normalizeEmail(loginId)) return true;
     return readPackedProfile(row.bio)?.username === loginId;
   });
   return (match as LoginAccountRow | undefined) || null;
