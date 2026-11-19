@@ -48,11 +48,14 @@ export async function findAccountForLogin(
     }
 
     const { data } = await admin.from('alumni_accounts').select('id,email,password_hash,bio,username');
+    const loginLower = loginId.toLowerCase();
     const match = (data || []).find((row) => {
       if (normalizeEmail(String(row.email || '')) === normalizedEmail) return true;
       const stored = String((row as { username?: string }).username || '').toLowerCase();
-      if (stored && stored === loginId) return true;
-      return readPackedProfile(row.bio)?.username === loginId;
+      if (stored && stored === loginLower) return true;
+      const packed = readPackedProfile(row.bio)?.username;
+      if (packed && packed.toLowerCase() === loginLower) return true;
+      return false;
     });
     return (match as LoginAccountRow | undefined) || null;
   }

@@ -21,14 +21,23 @@ export function SignInScreen({ event }: SignInScreenProps) {
           : '/registration';
 
     return (
-        <UsernameFirstAuthGate
-            idPrefix="reg-gate"
-            title="Registration Required"
-            identifierLead="Enter your username or email to sign in or create an account."
-            passwordLead="Welcome back — enter your password to continue."
-            defaultDest="/registration"
-            signupNext={nextPath}
-            postLoginNext={nextPath}
-        />
+        <div>
+            <UsernameFirstAuthGate
+                idPrefix="reg-gate"
+                title="Registration Required"
+                identifierLead="Enter your username or email to sign in or create an account."
+                passwordLead="Welcome back — enter your password to continue."
+                defaultDest="/registration"
+                signupNext={nextPath}
+                postLoginNext={nextPath}
+            />
+            <p className="text-center text-body-sm text-on-surface-variant mt-4 px-6">
+                Alumni committee?{' '}
+                <a href="/login?next=%2Fadmin" className="text-primary underline-offset-2 hover:underline">
+                    Sign in for admin
+                </a>{' '}
+                (not reunion registration).
+            </p>
+        </div>
     );
 }

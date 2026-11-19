@@ -82,6 +82,11 @@ export function UsernameFirstAuthGate({
                 const payload = await res.json().catch(() => ({}));
                 if (!active) return;
                 if (res.ok && payload.exists) {
+                    if (payload.role === 'admin') {
+                        const params = new URLSearchParams({ login: seed, next: '/admin' });
+                        window.location.replace(`/login?${params.toString()}`);
+                        return;
+                    }
                     setStep('password');
                 }
             } finally {
@@ -118,10 +123,12 @@ export function UsernameFirstAuthGate({
                 return;
             }
             if (payload.exists) {
-                setStep('password');
-                if (payload.role === 'admin' && signupNext.includes('registration')) {
-                    setError('Committee account — enter your password. You will not register as an alumnus.');
+                if (payload.role === 'admin') {
+                    const params = new URLSearchParams({ login: trimmed, next: '/admin' });
+                    window.location.replace(`/login?${params.toString()}`);
+                    return;
                 }
+                setStep('password');
                 setChecking(false);
                 return;
             }

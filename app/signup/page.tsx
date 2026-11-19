@@ -82,70 +82,79 @@ function SignupForm() {
     const [confirmMatch, setConfirmMatch] = useState<PreRegistrationData | null>(null);
     const [confirmCandidates, setConfirmCandidates] = useState<PreRegistrationData[]>([]);
     const lookupSeq = useRef(0);
-    const rosterLookupForLogin = useRef<string | null>(null);
     const router = useRouter();
     const searchParams = useSearchParams();
-    const loginFromGate = searchParams.get('login')?.trim() ?? '';
-    /** After /login or /new_registration gate: hold Create Account until member roster lookup finishes. */
-    const [gateRosterReady, setGateRosterReady] = useState(
-        !loginFromGate || !loginFromGate.includes('@')
-    );
+    type SignupPhase = 'checking' | 'existing-account' | 'roster' | 'ready';
+    const [phase, setPhase] = useState<SignupPhase>('checking');
 
-    useWaitCursor(loading || lookingUp || !gateRosterReady);
+    useWaitCursor(loading || lookingUp || phase !== 'ready');
+
+    async function redirectIfExistingAccount(loginId: string): Promise<boolean> {
+        const trimmed = loginId.trim();
+        if (!trimmed) return false;
+        const res = await fetch('/api/auth/lookup', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ username: trimmed }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok || !payload.exists) return false;
+        const params = new URLSearchParams();
+        params.set('login', trimmed);
+        const next = searchParams.get('next');
+        params.set('next', payload.role === 'admin' ? '/admin' : next || '/member');
+        window.location.replace(`/login?${params.toString()}`);
+        return true;
+    }
 
     useEffect(() => {
         let active = true;
         (async () => {
-            const res = await fetch('/api/auth/me', { cache: 'no-store' });
-            if (!active || !res.ok) return;
-            const me = await res.json();
-            if (me?.role === 'admin') router.replace(postAuthPath(me));
-        })();
-        return () => {
-            active = false;
-        };
-    }, [router]);
-
-    useEffect(() => {
-        const login = searchParams.get('login')?.trim();
-        if (!login) {
-            const next = searchParams.get('next');
-            const q = next ? `?next=${encodeURIComponent(next)}` : '';
-            router.replace(`/login${q}`);
-            return;
-        }
-
-        let active = true;
-        (async () => {
-            const res = await fetch('/api/auth/lookup', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ username: login }),
-            });
-            const payload = await res.json().catch(() => ({}));
-            if (!active) return;
-            if (res.ok && payload.exists) {
-                const params = new URLSearchParams();
-                params.set('login', login);
-                const next = searchParams.get('next');
-                if (next) {
-                    params.set('next', payload.role === 'admin' ? '/admin' : next);
-                } else if (payload.role === 'admin') {
-                    params.set('next', '/admin');
+            try {
+                const meRes = await fetch('/api/auth/me', { cache: 'no-store' });
+                if (meRes.ok) {
+                    const me = await meRes.json();
+                    if (me?.role === 'admin') {
+                        window.location.replace(postAuthPath(me));
+                        return;
+                    }
                 }
-                router.replace(`/login?${params.toString()}`);
-                return;
-            }
-            if (login.includes('@')) {
-                setEmail((prev) => prev || login);
-            } else {
-                setUsername((prev) => prev || login);
+
+                const login = searchParams.get('login')?.trim();
+                if (!login) {
+                    const next = searchParams.get('next');
+                    const q = next ? `?next=${encodeURIComponent(next)}` : '';
+                    window.location.replace(`/login${q}`);
+                    return;
+                }
+
+                const exists = await redirectIfExistingAccount(login);
+                if (!active || exists) {
+                    if (exists) setPhase('existing-account');
+                    return;
+                }
+
+                if (login.includes('@')) setEmail(login);
+                else setUsername(login);
+
+                if (login.includes('@')) {
+                    setPhase('roster');
+                    try {
+                        await lookupFromRoster({ email: login });
+                    } catch {
+                        // optional roster prefill
+                    }
+                }
+                if (active) setPhase('ready');
+            } catch {
+                if (active) setPhase('ready');
             }
         })();
         return () => {
             active = false;
         };
-    }, [searchParams, router]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrap once per entry URL
+    }, [searchParams]);
 
     function applyRosterMatch(match: PreRegistrationData) {
         const names = namesFromRoster(match);
@@ -212,31 +221,6 @@ function SignupForm() {
             if (seq === lookupSeq.current) setLookingUp(false);
         }
     }
-
-    useEffect(() => {
-        const login = searchParams.get('login')?.trim();
-        if (!login || !login.includes('@')) {
-            setGateRosterReady(true);
-            return;
-        }
-        if (rosterLookupForLogin.current === login) {
-            setGateRosterReady(true);
-            return;
-        }
-        rosterLookupForLogin.current = login;
-        let active = true;
-        void (async () => {
-            try {
-                await lookupFromRoster({ email: login });
-            } finally {
-                if (active) setGateRosterReady(true);
-            }
-        })();
-        return () => {
-            active = false;
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per ?login= email from auth gate
-    }, [searchParams]);
 
     async function handleSignup(e: React.FormEvent) {
         e.preventDefault();
@@ -346,12 +330,18 @@ function SignupForm() {
         );
     }
 
-    if (!gateRosterReady) {
+    if (phase !== 'ready') {
+        const message =
+            phase === 'existing-account'
+                ? 'Account found — opening sign in…'
+                : phase === 'roster'
+                  ? 'Looking up the member list…'
+                  : 'Checking your account…';
         return (
             <div className="min-h-screen bg-surface flex items-center justify-center px-6 pt-20">
                 <div className="text-center">
                     <div className="w-12 h-12 rounded-full border-4 border-primary border-t-secondary-container animate-spin mx-auto mb-4" />
-                    <p className="text-body-md text-on-surface-variant">Looking up the member list…</p>
+                    <p className="text-body-md text-on-surface-variant">{message}</p>
                 </div>
             </div>
         );
@@ -400,7 +390,15 @@ function SignupForm() {
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                onBlur={() => void lookupFromRoster()}
+                                onBlur={() => {
+                                    void (async () => {
+                                        if (await redirectIfExistingAccount(email)) {
+                                            setPhase('existing-account');
+                                            return;
+                                        }
+                                        void lookupFromRoster();
+                                    })();
+                                }}
                                 placeholder="you@gmail.com"
                                 required
                                 autoComplete="email"
