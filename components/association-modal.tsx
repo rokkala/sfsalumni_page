@@ -2,7 +2,6 @@
 'use client';
 
 import Link from 'next/link';
-import { createPortal } from 'react-dom';
 import { useEffect, useId, useRef, useState } from 'react';
 import CommitteeBusinessCard, {
   type PublicCommitteeMember,
@@ -21,12 +20,6 @@ export default function AssociationModal({
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
   const [members, setMembers] = useState<PublicCommitteeMember[] | null>(null);
-  // Portals need a DOM node, which doesn't exist during SSR, so we wait for mount
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -49,24 +42,17 @@ export default function AssociationModal({
 
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     closeRef.current?.focus();
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
     }
     window.addEventListener('keydown', onKey);
-    return () => {
-      document.body.style.overflow = prev;
-      window.removeEventListener('keydown', onKey);
-    };
+    return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open || !mounted) return null;
+  if (!open) return null;
 
-  // Rendered into document.body so ancestor transforms, filters, or overflow
-  // rules can't offset or clip the fixed overlay
-  return createPortal(
+  return (
     <ModalOverlay
       titleId={titleId}
       backdropLabel="Close association dialog"
@@ -118,7 +104,6 @@ export default function AssociationModal({
             About the association →
           </Link>
         </div>
-    </ModalOverlay>,
-    document.body,
+    </ModalOverlay>
   );
 }

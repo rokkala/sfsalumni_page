@@ -1,6 +1,5 @@
 'use client';
 
-import { createPortal } from 'react-dom';
 import { useEffect, useId, useRef, useState } from 'react';
 import { ModalCloseButton, ModalOverlay } from '@/components/modal-shell';
 import { formatCostForDisplay } from '@/lib/registration/registration';
@@ -28,13 +27,8 @@ export default function ReconciledRegsModal({
 }) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
-  const [mounted, setMounted] = useState(false);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -69,24 +63,19 @@ export default function ReconciledRegsModal({
 
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     closeRef.current?.focus();
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
     }
     window.addEventListener('keydown', onKey);
-    return () => {
-      document.body.style.overflow = prev;
-      window.removeEventListener('keydown', onKey);
-    };
+    return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open || !mounted) return null;
+  if (!open) return null;
 
   const total = (rows || []).reduce((sum, r) => sum + r.settled_paise, 0);
 
-  return createPortal(
+  return (
     <ModalOverlay
       titleId={titleId}
       backdropLabel="Close payments reconciled"
@@ -153,7 +142,6 @@ export default function ReconciledRegsModal({
             </table>
           )}
         </div>
-    </ModalOverlay>,
-    document.body
+    </ModalOverlay>
   );
 }

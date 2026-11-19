@@ -142,9 +142,7 @@ export function assertRemittancePayload(input: {
 
   if (method === 'upi') {
     if (!isUpiEligible(input.amountPaise)) {
-      throw new Error(
-        'UPI is available only when your total due including donation is Rs. 5,000 or more.'
-      );
+      throw new Error('UPI is not available for this amount.');
     }
     const proof = assertOfflineProofFields({
       utr: input.fields.utr,
@@ -248,7 +246,7 @@ export function remittanceMethodLabel(method: RemittanceMethod): string {
     case 'foreign':
       return 'Foreign remittance';
     case 'upi':
-      return 'UPI';
+      return 'UPI PhonePe';
     default:
       return method;
   }

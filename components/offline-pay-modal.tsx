@@ -1,7 +1,6 @@
 'use client';
 
 import { FormEvent, useEffect, useId, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import AmountWithFx from '@/components/amount-with-fx';
 import { ModalCloseButton, ModalOverlay } from '@/components/modal-shell';
 import {
@@ -57,6 +56,8 @@ type Props = {
   existingProof?: ExistingOfflineProof | null;
   onSubmitted?: (message: string) => void;
   submitUrl?: string;
+  /** When the modal opens, pre-select this remittance method (e.g. UPI from the registration page). */
+  initialRemittanceMethod?: RemittanceMethod;
 };
 
 async function copyText(text: string): Promise<boolean> {
@@ -87,11 +88,11 @@ export default function OfflinePayModal({
   existingProof = null,
   onSubmitted,
   submitUrl = '/api/payments/offline-proof',
+  initialRemittanceMethod,
 }: Props) {
   const titleId = useId();
   const photoInputId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
-  const [mounted, setMounted] = useState(false);
   const [qrSrc, setQrSrc] = useState('');
   const [utr, setUtr] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -141,17 +142,13 @@ export default function OfflinePayModal({
       : null;
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
     if (!open) return;
     setUtr(normalizeUpiRefNoInput(existingProof?.utr ?? ''));
     setFile(null);
     setError('');
     setPhase('pay');
     setThanksMessage('');
-    setMethod('neft_rtgs');
+    setMethod(initialRemittanceMethod ?? 'neft_rtgs');
     setPaymentDate(defaultPaymentDateIst());
     setReference('');
     setChallanNumber('');
@@ -163,10 +160,10 @@ export default function OfflinePayModal({
     setAmountForeign('');
     setCurrency('');
     setAmountInrReported('');
-  }, [open, existingProof?.utr]);
+  }, [open, existingProof?.utr, initialRemittanceMethod]);
 
   useEffect(() => {
-    if (!open || amountPaise < 100) {
+    if (!open || amountPaise <= 0) {
       setUpiQuota(null);
       return;
     }
@@ -188,12 +185,7 @@ export default function OfflinePayModal({
 
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     closeRef.current?.focus();
-    return () => {
-      document.body.style.overflow = prev;
-    };
   }, [open, phase]);
 
   useEffect(() => {
@@ -239,9 +231,9 @@ export default function OfflinePayModal({
     };
   }, [open, upiUri, proofLocked]);
 
-  // Portal to document.body so this form is never nested inside the registration <form>
+  // ModalOverlay portals to document.body so this form is never nested inside the registration <form>
   // (nested forms make "Submit for verification" save the page form instead of posting proof).
-  if (!open || !mounted) return null;
+  if (!open) return null;
 
   function finishThanks() {
     const msg = thanksMessage || offlineThanksFallback(source);
@@ -354,7 +346,7 @@ export default function OfflinePayModal({
     else onClose();
   }
 
-  return createPortal(
+  return (
     <ModalOverlay
       titleId={titleId}
       backdropLabel="Close payment dialog"
@@ -445,13 +437,6 @@ export default function OfflinePayModal({
             </div>
 
             <div className="px-5 py-4 space-y-4">
-              {upiQuota && !upiQuota.eligible ? (
-                <p className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-sm text-on-surface-variant">
-                  UPI is available only when your total due including donation is Rs. 5,000 or more.
-                  Use NEFT/RTGS, cash/cheque deposit, your class representative, or foreign remittance
-                  below.
-                </p>
-              ) : null}
               {upiQuota?.eligible && !upiQuota.quota_available && upiQuota.next_opens_at ? (
                 <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
                   UPI limit reached for today. You can try UPI again from{' '}
@@ -491,9 +476,6 @@ export default function OfflinePayModal({
                           className="accent-primary"
                         />
                         {remittanceMethodLabel(m)}
-                        {isUpi && disabled && upiQuota && !upiQuota.eligible ? (
-                          <span className="text-xs">(min Rs. 5,000)</span>
-                        ) : null}
                       </label>
                     );
                   })}
@@ -526,8 +508,18 @@ export default function OfflinePayModal({
               {account.upi_id && method === 'upi' && upiMethodAllowed ? (
                 <div className="rounded-xl border border-outline-variant bg-surface-container-low p-4 text-center">
                   <p className="text-xs uppercase tracking-wider mb-3 text-on-surface-variant">
-                    Scan with any UPI app
+                    Scan with PhonePe or any UPI app
                   </p>
+                  {upiUri ? (
+                    <p className="mb-3">
+                      <a
+                        href={upiUri}
+                        className="inline-flex rounded-lg bg-[#5f259f] px-4 py-2 text-sm font-bold text-white hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#5f259f]/40"
+                      >
+                        Open PhonePe
+                      </a>
+                    </p>
+                  ) : null}
                   {qrSrc ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -809,7 +801,6 @@ export default function OfflinePayModal({
             </div>
           </>
         )}
-    </ModalOverlay>,
-    document.body
+    </ModalOverlay>
   );
 }

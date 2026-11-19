@@ -8,6 +8,7 @@
 import { useState, type Dispatch, type FormEvent, type SetStateAction, type KeyboardEvent } from 'react';
 import BackHomeLink from '@/components/back-home-link';
 import OfflinePayModal from '@/components/offline-pay-modal';
+import { ModalBlockingScrim } from '@/components/modal-shell';
 import SearchableSelect from '@/components/searchable-select';
 import { DonationSection } from '@/components/registration_page/registration-donation';
 import { PaymentSummary } from '@/components/registration_page/registration-payment-summary';
@@ -213,6 +214,9 @@ export function RegistrationForm(props: RegistrationFormProps) {
     const feeLabel = formatCostForDisplay(EVENT_FEE_PER_PERSON_PAISE);
     const choicesLocked = busy;
     const [payOpen, setPayOpen] = useState(false);
+    const [payInitialMethod, setPayInitialMethod] = useState<
+        'neft_rtgs' | 'upi' | undefined
+    >(undefined);
     const [payRegistrationId, setPayRegistrationId] = useState('');
     const [payRegistrationCode, setPayRegistrationCode] = useState('');
     const [payPreparing, setPayPreparing] = useState(false);
@@ -227,6 +231,9 @@ export function RegistrationForm(props: RegistrationFormProps) {
         !payPreparing &&
         (Boolean(pendingProof) || amountDuePaise > 0);
 
+    const canPayUpi =
+        canOpenPay && Boolean(bankAccount?.upi_id);
+
     const canPayOnline =
         onlineCheckoutEnabled &&
         hasSavedReg &&
@@ -236,7 +243,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
         !verificationPending &&
         amountDuePaise > 0;
 
-    async function openPayModal() {
+    async function openPayModal(initialMethod?: 'neft_rtgs' | 'upi') {
         if (!canOpenPay) return;
         setPayPreparing(true);
         setPayError('');
@@ -252,6 +259,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
         }
         setPayRegistrationId(result.registrationId);
         setPayRegistrationCode(result.transactionRef);
+        setPayInitialMethod(initialMethod);
         setPayOpen(true);
     }
 
@@ -311,7 +319,9 @@ export function RegistrationForm(props: RegistrationFormProps) {
     }
 
     return (
-        <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-6 pt-20 pb-12">
+        <>
+            <ModalBlockingScrim active={payPreparing} />
+            <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-6 pt-20 pb-12">
             <div className="w-full max-w-3xl">
                 <div className="bg-surface-paper rounded-2xl shadow-lg p-8 border border-surface-container-low">
                     <h1 className="text-headline-lg text-primary mb-2">
@@ -673,6 +683,16 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                     {payingOnline ? 'Opening checkout…' : 'Pay online'}
                                 </button>
                             ) : null}
+                            {canPayUpi ? (
+                                <button
+                                    type="button"
+                                    onClick={() => void openPayModal('upi')}
+                                    disabled={payPreparing}
+                                    className="flex-1 py-3 rounded-lg bg-[#5f259f] text-white text-label-md uppercase tracking-wider font-bold hover:opacity-90 disabled:opacity-50 transition-all focus:outline-none focus:ring-2 focus:ring-[#5f259f]/40"
+                                >
+                                    {payPreparing ? 'Preparing…' : 'UPI PhonePe'}
+                                </button>
+                            ) : null}
                             {canOpenPay ? (
                                 <button
                                     type="button"
@@ -712,7 +732,11 @@ export function RegistrationForm(props: RegistrationFormProps) {
                     {bankAccount && payRegistrationId ? (
                         <OfflinePayModal
                             open={payOpen}
-                            onClose={() => setPayOpen(false)}
+                            onClose={() => {
+                                setPayOpen(false);
+                                setPayInitialMethod(undefined);
+                            }}
+                            initialRemittanceMethod={payInitialMethod}
                             account={bankAccount}
                             amountPaise={amountDuePaise}
                             note="Golden Jubilee registration"
@@ -744,6 +768,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                 </div>
             </div>
         </div>
+        </>
     );
 }
 

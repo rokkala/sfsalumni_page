@@ -24,7 +24,6 @@ import {
   verificationStatusLabel,
 } from '../lib/payments/offline-proof.ts';
 import {
-  UPI_MIN_TOTAL_PAISE,
   isUpiEligible,
   istDayUtcBounds,
   nextUpiWindowOpensAt,
@@ -323,8 +322,8 @@ if (!REGISTRATION_DONATION_ONLY_THANKS.includes('Thank you for the Donation')) {
   throw new Error('donation-only thanks copy');
 }
 
-if (isUpiEligible(UPI_MIN_TOTAL_PAISE - 1)) throw new Error('upi min edge low');
-if (!isUpiEligible(UPI_MIN_TOTAL_PAISE)) throw new Error('upi min edge high');
+if (isUpiEligible(0)) throw new Error('upi zero not eligible');
+if (!isUpiEligible(100)) throw new Error('upi positive eligible');
 
 const blocked = upiQuotaForAmount({
   amountPaise: 500_000,

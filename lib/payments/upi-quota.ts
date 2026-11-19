@@ -1,6 +1,7 @@
 /** UPI eligibility and IST daily caps for offline UPI remittance proofs. */
 
-export const UPI_MIN_TOTAL_PAISE = 500_000;
+/** @deprecated Use {@link isUpiEligible}; kept for scripts that import the constant. */
+export const UPI_MIN_TOTAL_PAISE = 0;
 export const UPI_DAILY_MAX_PAISE = 10_000_000;
 export const UPI_DAILY_MAX_TXNS = 20;
 export const UPI_QUOTA_TZ = 'Asia/Kolkata';
@@ -17,7 +18,7 @@ export type UpiQuotaSnapshot = {
 };
 
 export function isUpiEligible(amountPaise: number): boolean {
-  return Math.floor(Number(amountPaise) || 0) >= UPI_MIN_TOTAL_PAISE;
+  return Math.floor(Number(amountPaise) || 0) > 0;
 }
 
 /** Start/end of calendar day in IST as UTC Date bounds for DB `created_at` filters. */
@@ -166,10 +167,7 @@ export async function assertUpiQuotaForSubmit(
 ): Promise<UpiQuotaSnapshot> {
   const snapshot = await buildUpiQuotaSnapshot(admin, amountPaise, at);
   if (!snapshot.eligible) {
-    throw new UpiQuotaError(
-      'UPI is available only when your total due including donation is Rs. 5,000 or more. Use NEFT/RTGS or other options.',
-      snapshot
-    );
+    throw new UpiQuotaError('UPI is not available for this amount. Use NEFT/RTGS or other options.', snapshot);
   }
   if (!snapshot.quota_available) {
     const when = snapshot.next_opens_at
