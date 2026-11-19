@@ -5,6 +5,7 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { safeRegistrationNext } from '@/lib/events/choose-event';
+import { postAuthPath } from '@/lib/jubilee-cta';
 import { useWaitCursor } from '@/lib/use-wait-cursor';
 import PasswordInput from '@/components/password-input';
 import BackHomeLink from '@/components/back-home-link';
@@ -91,6 +92,19 @@ function SignupForm() {
     );
 
     useWaitCursor(loading || lookingUp || !gateRosterReady);
+
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            const res = await fetch('/api/auth/me', { cache: 'no-store' });
+            if (!active || !res.ok) return;
+            const me = await res.json();
+            if (me?.role === 'admin') router.replace(postAuthPath(me));
+        })();
+        return () => {
+            active = false;
+        };
+    }, [router]);
 
     useEffect(() => {
         const login = searchParams.get('login')?.trim();
@@ -278,7 +292,7 @@ function SignupForm() {
                 const meRes = await fetch('/api/auth/me');
                 const me = meRes.ok ? await meRes.json() : null;
                 const next = safeRegistrationNext(searchParams.get('next'));
-                if (me?.role === 'admin') router.push('/admin');
+                if (me?.role === 'admin') router.replace(postAuthPath(me));
                 else if (next) router.push(next);
                 else if (me?.jubilee_reg_status === 'paid') router.push('/member');
                 else router.push('/registration');

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import BackHomeLink from '@/components/back-home-link';
 import PasswordInput from '@/components/password-input';
 import { safeRegistrationNext } from '@/lib/events/choose-event';
+import { postAuthPath, type JubileeAccountHint } from '@/lib/jubilee-cta';
 import { useWaitCursor } from '@/lib/use-wait-cursor';
 
 export type UsernameFirstAuthGateProps = {
@@ -25,17 +26,16 @@ export type UsernameFirstAuthGateProps = {
 };
 
 function resolvePostLoginDest(
-    me: { role?: string; jubilee_reg_status?: string } | null,
+    me: JubileeAccountHint | null,
     postLoginNext: string | null | undefined,
     defaultDest: string
 ): string {
-    const next = safeRegistrationNext(postLoginNext);
     if (me?.role === 'admin') {
-        return next &&
-            (next === '/admin-app' || next.startsWith('/admin-app/') || next.startsWith('/admin-app?'))
-            ? next
-            : '/admin';
+        const next = safeRegistrationNext(postLoginNext);
+        if (next?.startsWith('/admin-app')) return next;
+        return postAuthPath(me);
     }
+    const next = safeRegistrationNext(postLoginNext);
     if (next) return next;
     if (me?.jubilee_reg_status === 'paid') return '/member';
     return defaultDest;

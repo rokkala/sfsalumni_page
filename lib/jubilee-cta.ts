@@ -57,8 +57,11 @@ export function jubileeNavCta(account: JubileeAccountHint | null | undefined): J
   return { show: true, href: '/registration', label: 'Register' };
 }
 
+/** Verified committee admins — never alumni registration. */
+export const COMMITTEE_AUTH_PATH = '/admin';
+
 export function postAuthPath(account: JubileeAccountHint): string {
-  if (account.role === 'admin') return '/admin';
+  if (account.role === 'admin') return COMMITTEE_AUTH_PATH;
   const status = account.jubilee_reg_status || 'none';
   if (status === 'paid') return '/member';
   return '/registration';

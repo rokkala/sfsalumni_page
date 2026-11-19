@@ -9,7 +9,8 @@
 'use client';
 
 import { Suspense, useEffect, useState, type FormEvent } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { COMMITTEE_AUTH_PATH } from '@/lib/jubilee-cta';
 import { createClient } from '@/lib/supabase';
 import { normalizePhoneNumber, phoneValidationError, splitE164 } from '@/lib/phone';
 import {
@@ -32,7 +33,6 @@ import {
     type RegistrationProfileSnapshot,
 } from '@/lib/events/existing-registration';
 import {
-    AdminNoticeScreen,
     ChooseEventScreen,
     ConfirmPrefillScreen,
     EventUnavailableScreen,
@@ -184,6 +184,7 @@ export default function RegistrationPage() {
 }
 
 function RegistrationPageInner() {
+    const router = useRouter();
     const [user, setUser] = useState<RegistrationUser | null>(null);
     const [gate, setGate] = useState<'ok' | 'admin' | null>(null);
     const [loading, setLoading] = useState(true);
@@ -417,6 +418,10 @@ function RegistrationPageInner() {
         // Runs once on mount; the prefill helper is recreated each render but only used here.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        if (gate === 'admin') router.replace(COMMITTEE_AUTH_PATH);
+    }, [gate, router]);
 
     /**
      * Reads the saved registration and its server-calculated amounts. Used on load, after a save,
@@ -913,7 +918,13 @@ function RegistrationPageInner() {
         );
     }
 
-    if (gate === 'admin') return <AdminNoticeScreen />;
+    if (gate === 'admin') {
+        return (
+            <div className="min-h-screen bg-surface flex items-center justify-center pt-20">
+                <RegistrationLoadingPanel />
+            </div>
+        );
+    }
 
     if (!event && choices.length > 1) {
         return <ChooseEventScreen choices={choices} registrationsByEventId={choiceRegs} />;
