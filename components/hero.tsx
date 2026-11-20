@@ -43,7 +43,10 @@ export default function Hero() {
     let active = true;
     (async () => {
       try {
-        const eventsRes = await fetch('/api/events', { cache: 'no-store' });
+        const [eventsRes, meRes] = await Promise.all([
+          fetch('/api/events', { cache: 'no-store' }),
+          fetch('/api/auth/me', { cache: 'no-store' }),
+        ]);
         if (!active) return;
         if (!eventsRes.ok) {
           setEvents([]);
@@ -55,28 +58,33 @@ export default function Hero() {
           return;
         }
 
-        // Resolve registrations before publishing events so paid alumni never flash Register.
-        const next: Record<string, EventRegistrationHint | null> = {};
-        for (const event of rows) {
-          try {
-            const regRes = await fetch(
-              `/api/registration/event?eventId=${encodeURIComponent(event.id)}`,
-              { cache: 'no-store' }
-            );
-            if (!active) return;
-            if (regRes.ok) {
-              const body = (await regRes.json()) as RegistrationEventResponse;
-              next[event.id] = body.registration ?? null;
-            } else {
-              next[event.id] = null;
-            }
-          } catch {
-            next[event.id] = null;
-          }
-        }
-        if (!active) return;
-        setRegsByEventId(next);
         setEvents(rows);
+
+        // Guests never get registration rows from the API — skip N round-trips.
+        if (!meRes.ok) {
+          setRegsByEventId({});
+          return;
+        }
+
+        const entries = await Promise.all(
+          rows.map(async (event) => {
+            try {
+              const regRes = await fetch(
+                `/api/registration/event?eventId=${encodeURIComponent(event.id)}`,
+                { cache: 'no-store' }
+              );
+              if (regRes.ok) {
+                const body = (await regRes.json()) as RegistrationEventResponse;
+                return [event.id, body.registration ?? null] as const;
+              }
+              return [event.id, null] as const;
+            } catch {
+              return [event.id, null] as const;
+            }
+          })
+        );
+        if (!active) return;
+        setRegsByEventId(Object.fromEntries(entries));
       } catch {
         if (active) setEvents([]);
       } finally {

@@ -56,6 +56,7 @@ export default function JubileeNewRegistrationLink({
   }, [pathname]);
 
   useEffect(() => {
+    if (eventId) return;
     let active = true;
     (async () => {
       try {
@@ -71,10 +72,11 @@ export default function JubileeNewRegistrationLink({
     return () => {
       active = false;
     };
-  }, [pathname]);
+  }, [pathname, eventId]);
 
-  if (account === undefined) return null;
-  const cta = variant === 'nav' ? jubileeNavCta(account) : jubileeCta(account);
+  // Treat "still loading /me" like a guest so the hero CTA paints immediately; hide once admin/paid is known.
+  const accountHint = account === undefined ? null : account;
+  const cta = variant === 'nav' ? jubileeNavCta(accountHint) : jubileeCta(accountHint);
   if (!cta.show) return null;
 
   let href = cta.href.replace(/^\/registration/, '/new_registration');
@@ -89,7 +91,7 @@ export default function JubileeNewRegistrationLink({
       className={`${styles[variant]} ${className}`.trim()}
     >
       <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
-      Registration
+      New Registration
     </Link>
   );
 }

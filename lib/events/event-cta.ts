@@ -50,7 +50,7 @@ export function eventActionFromRegistration(
   if (!registration) {
     return {
       kind: 'register',
-      label: 'Registration',
+      label: 'New Registration',
       href: newRegistrationPath(eventId),
     };
   }
