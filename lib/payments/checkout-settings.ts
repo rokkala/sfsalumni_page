@@ -22,6 +22,8 @@ export type CheckoutSettingsRow = {
   online_checkout_enabled: boolean;
   /** When false, hide bank statement upload + block its API (committee rollback). */
   bank_statement_reconcile_enabled: boolean;
+  /** When true, statement match includes paid receivable lines (testing only). */
+  bank_statement_include_closed_lines: boolean;
 };
 
 /** Missing table (migration not applied) => online checkout off. */
@@ -30,27 +32,41 @@ export async function loadCheckoutSettings(
 ): Promise<CheckoutSettingsRow> {
   const { data, error } = await admin
     .from('payment_checkout_settings')
-    .select('online_checkout_enabled, bank_statement_reconcile_enabled')
+    .select(
+      'online_checkout_enabled, bank_statement_reconcile_enabled, bank_statement_include_closed_lines'
+    )
     .eq('id', ROW_ID)
     .maybeSingle();
 
   if (error) {
     if (error.code === '42P01' || error.message?.includes('payment_checkout_settings')) {
-      return { online_checkout_enabled: false, bank_statement_reconcile_enabled: false };
+      return {
+        online_checkout_enabled: false,
+        bank_statement_reconcile_enabled: false,
+        bank_statement_include_closed_lines: false,
+      };
     }
-    if (/bank_statement_reconcile_enabled/i.test(error.message || '')) {
+    if (/bank_statement_(reconcile|include_closed)/i.test(error.message || '')) {
       const legacy = await admin
         .from('payment_checkout_settings')
-        .select('online_checkout_enabled')
+        .select('online_checkout_enabled, bank_statement_reconcile_enabled')
         .eq('id', ROW_ID)
         .maybeSingle();
       return {
         online_checkout_enabled: Boolean(legacy.data?.online_checkout_enabled),
-        bank_statement_reconcile_enabled: true,
+        bank_statement_reconcile_enabled:
+          legacy.data?.bank_statement_reconcile_enabled === undefined
+            ? true
+            : Boolean(legacy.data.bank_statement_reconcile_enabled),
+        bank_statement_include_closed_lines: false,
       };
     }
     console.error('loadCheckoutSettings', error);
-    return { online_checkout_enabled: false, bank_statement_reconcile_enabled: false };
+    return {
+      online_checkout_enabled: false,
+      bank_statement_reconcile_enabled: false,
+      bank_statement_include_closed_lines: false,
+    };
   }
 
   return {
@@ -59,6 +75,7 @@ export async function loadCheckoutSettings(
       data?.bank_statement_reconcile_enabled === undefined
         ? true
         : Boolean(data.bank_statement_reconcile_enabled),
+    bank_statement_include_closed_lines: Boolean(data?.bank_statement_include_closed_lines),
   };
 }
 
@@ -77,6 +94,7 @@ export async function setCheckoutSettingsEnabled(enabled: boolean): Promise<
       id: ROW_ID,
       online_checkout_enabled: enabled,
       bank_statement_reconcile_enabled: existing.bank_statement_reconcile_enabled,
+      bank_statement_include_closed_lines: existing.bank_statement_include_closed_lines,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'id' }
@@ -104,6 +122,7 @@ export async function setBankStatementReconcileEnabled(enabled: boolean): Promis
       id: ROW_ID,
       online_checkout_enabled: existing.online_checkout_enabled,
       bank_statement_reconcile_enabled: enabled,
+      bank_statement_include_closed_lines: existing.bank_statement_include_closed_lines,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'id' }
@@ -121,6 +140,76 @@ export async function setBankStatementReconcileEnabled(enabled: boolean): Promis
         ok: false,
         error:
           'Bank statement toggle is not in the database yet. Run migration 20261120140000_bank_statement_reconcile_flag.sql in Supabase, or set BANK_STATEMENT_RECONCILE_ENABLED=false in Vercel for an env-only rollback.',
+      };
+    }
+    return { ok: false, error: 'Could not save bank statement settings' };
+  }
+  return { ok: true };
+}
+
+export async function setBankStatementIncludeClosedLines(enabled: boolean): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  const admin = createAdminClient();
+  const existing = await loadCheckoutSettings(admin);
+  const { error } = await admin.from('payment_checkout_settings').upsert(
+    {
+      id: ROW_ID,
+      online_checkout_enabled: existing.online_checkout_enabled,
+      bank_statement_reconcile_enabled: existing.bank_statement_reconcile_enabled,
+      bank_statement_include_closed_lines: enabled,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'id' }
+  );
+  if (error) {
+    console.error('setBankStatementIncludeClosedLines', error);
+    if (checkoutSettingsTableMissing(error)) {
+      return {
+        ok: false,
+        error: `payment_checkout_settings is not set up yet. Run migration ${CHECKOUT_SETTINGS_MIGRATION} in Supabase (see migrations/APPLY_ORDER.md).`,
+      };
+    }
+    if (/bank_statement_include_closed_lines/i.test(error.message || '')) {
+      return {
+        ok: false,
+        error:
+          'Run migration 20261120170000_bank_statement_include_closed.sql in Supabase for the include-closed-lines toggle.',
+      };
+    }
+    return { ok: false, error: 'Could not save bank statement settings' };
+  }
+  return { ok: true };
+}
+
+export async function setBankStatementIncludeClosedLines(enabled: boolean): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  const admin = createAdminClient();
+  const existing = await loadCheckoutSettings(admin);
+  const { error } = await admin.from('payment_checkout_settings').upsert(
+    {
+      id: ROW_ID,
+      online_checkout_enabled: existing.online_checkout_enabled,
+      bank_statement_reconcile_enabled: existing.bank_statement_reconcile_enabled,
+      bank_statement_include_closed_lines: enabled,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'id' }
+  );
+  if (error) {
+    console.error('setBankStatementIncludeClosedLines', error);
+    if (checkoutSettingsTableMissing(error)) {
+      return {
+        ok: false,
+        error: `payment_checkout_settings is not set up yet. Run migration ${CHECKOUT_SETTINGS_MIGRATION} in Supabase (see migrations/APPLY_ORDER.md).`,
+      };
+    }
+    if (/bank_statement_include_closed_lines/i.test(error.message || '')) {
+      return {
+        ok: false,
+        error:
+          'Run migration 20261120170000_bank_statement_include_closed.sql in Supabase for the include-closed-lines toggle.',
       };
     }
     return { ok: false, error: 'Could not save bank statement settings' };

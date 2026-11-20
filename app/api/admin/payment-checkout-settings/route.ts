@@ -4,6 +4,7 @@ import { bankStatementKilledByEnv } from '@/lib/admin/bank-statement-feature';
 import { isCashfreeConfigured } from '@/lib/payments/cashfree';
 import {
   loadCheckoutSettings,
+  setBankStatementIncludeClosedLines,
   setBankStatementReconcileEnabled,
   setCheckoutSettingsEnabled,
 } from '@/lib/payments/checkout-settings';
@@ -22,6 +23,7 @@ export async function GET() {
       ? false
       : settings.bank_statement_reconcile_enabled,
     bank_statement_killed_by_env: env_kills_bank_statement,
+    bank_statement_include_closed_lines: settings.bank_statement_include_closed_lines,
     cashfree_configured: isCashfreeConfigured(),
   });
 }
@@ -33,11 +35,12 @@ export async function PATCH(request: Request) {
   const body = await request.json().catch(() => ({}));
   const patchOnline = typeof body.online_checkout_enabled === 'boolean';
   const patchBank = typeof body.bank_statement_reconcile_enabled === 'boolean';
-  if (!patchOnline && !patchBank) {
+  const patchIncludeClosed = typeof body.bank_statement_include_closed_lines === 'boolean';
+  if (!patchOnline && !patchBank && !patchIncludeClosed) {
     return NextResponse.json(
       {
         error:
-          'Send online_checkout_enabled and/or bank_statement_reconcile_enabled (boolean).',
+          'Send online_checkout_enabled, bank_statement_reconcile_enabled, and/or bank_statement_include_closed_lines (boolean).',
       },
       { status: 400 }
     );
@@ -67,6 +70,13 @@ export async function PATCH(request: Request) {
     }
   }
 
+  if (patchIncludeClosed) {
+    const saved = await setBankStatementIncludeClosedLines(body.bank_statement_include_closed_lines);
+    if (!saved.ok) {
+      return NextResponse.json({ error: saved.error }, { status: 500 });
+    }
+  }
+
   const settings = await loadCheckoutSettings();
   const env_kills_bank_statement = bankStatementKilledByEnv();
 
@@ -77,6 +87,7 @@ export async function PATCH(request: Request) {
       ? false
       : settings.bank_statement_reconcile_enabled,
     bank_statement_killed_by_env: env_kills_bank_statement,
+    bank_statement_include_closed_lines: settings.bank_statement_include_closed_lines,
     cashfree_configured: isCashfreeConfigured(),
   });
 }

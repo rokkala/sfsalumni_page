@@ -31,6 +31,7 @@ export default function AdminReceivablesPage() {
   const [error, setError] = useState('');
   const [statementOpen, setStatementOpen] = useState(false);
   const [bankStatementOn, setBankStatementOn] = useState(true);
+  const [bankStatementIncludeClosed, setBankStatementIncludeClosed] = useState(false);
   const [bankStatementEnvKill, setBankStatementEnvKill] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
 
@@ -39,6 +40,7 @@ export default function AdminReceivablesPage() {
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) return;
     setBankStatementOn(Boolean(payload.bank_statement_reconcile_enabled));
+    setBankStatementIncludeClosed(Boolean(payload.bank_statement_include_closed_lines));
     setBankStatementEnvKill(Boolean(payload.bank_statement_killed_by_env));
   }, []);
 
@@ -84,11 +86,37 @@ export default function AdminReceivablesPage() {
         return;
       }
       setBankStatementOn(Boolean(payload.bank_statement_reconcile_enabled));
+      setBankStatementIncludeClosed(Boolean(payload.bank_statement_include_closed_lines));
       setBankStatementEnvKill(Boolean(payload.bank_statement_killed_by_env));
       setMessage(
         checked
           ? 'Bank statement upload enabled.'
           : 'Bank statement upload disabled — instant rollback for testing.'
+      );
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function toggleBankStatementIncludeClosed(checked: boolean) {
+    setSettingsBusy(true);
+    setMessage('');
+    try {
+      const res = await fetch('/api/admin/payment-checkout-settings', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bank_statement_include_closed_lines: checked }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMessage(payload.error || 'Could not save setting');
+        return;
+      }
+      setBankStatementIncludeClosed(Boolean(payload.bank_statement_include_closed_lines));
+      setMessage(
+        checked
+          ? 'Statement match will include paid receivable lines (preview only — turn off before go-live).'
+          : 'Statement match uses open receivable lines only.'
       );
     } finally {
       setSettingsBusy(false);
@@ -217,13 +245,25 @@ export default function AdminReceivablesPage() {
           Bank statement upload &amp; match
         </label>
         {bankStatementOn && !bankStatementEnvKill ? (
-          <button
-            type="button"
-            onClick={() => setStatementOpen(true)}
-            className="rounded-lg border border-primary/25 bg-surface-ivory px-4 py-2.5 text-label-sm font-semibold text-primary cursor-pointer hover:bg-surface-container"
-          >
-            Upload bank statement
-          </button>
+          <>
+            <label className="flex items-center gap-2 text-body-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={bankStatementIncludeClosed}
+                disabled={settingsBusy}
+                onChange={(e) => void toggleBankStatementIncludeClosed(e.target.checked)}
+                className="size-4"
+              />
+              Statement match includes paid lines (testing)
+            </label>
+            <button
+              type="button"
+              onClick={() => setStatementOpen(true)}
+              className="rounded-lg border border-primary/25 bg-surface-ivory px-4 py-2.5 text-label-sm font-semibold text-primary cursor-pointer hover:bg-surface-container"
+            >
+              Upload bank statement
+            </button>
+          </>
         ) : null}
         {bankStatementEnvKill ? (
           <p className="text-label-sm text-on-surface-variant">
@@ -412,6 +452,7 @@ export default function AdminReceivablesPage() {
         onApplied={() => void load({ silentCashfreeMessage: true }).catch(() => undefined)}
         events={events}
         defaultEventId={eventId}
+        includeClosedLines={bankStatementIncludeClosed}
       />
     </AdminShell>
   );

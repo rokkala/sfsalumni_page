@@ -9,6 +9,7 @@ import { matchStatementCredits } from '@/lib/admin/bank-statement-match';
 import { partitionSettledCredits } from '@/lib/admin/bank-statement-skip-settled';
 import { isBankStatementReconcileEnabled } from '@/lib/admin/bank-statement-feature';
 import { requireVerifiedAdmin } from '@/lib/auth/admin-guard';
+import { loadCheckoutSettings } from '@/lib/payments/checkout-settings';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,9 +75,13 @@ export async function POST(request: Request) {
 
   const { to_match, already_settled } = await partitionSettledCredits(credits);
 
+  const checkout = await loadCheckoutSettings();
+  const include_closed_lines = checkout.bank_statement_include_closed_lines;
+
   const { results, error } = await matchStatementCredits({
     credits: to_match,
     eventId: eventId || undefined,
+    includeClosedLines: include_closed_lines,
   });
   if (error) {
     return NextResponse.json({ error }, { status: 500 });
@@ -97,6 +102,7 @@ export async function POST(request: Request) {
       reason: row.reason,
     })),
     suggested_matches: matched,
+    include_closed_lines,
     results,
   });
 }

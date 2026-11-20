@@ -80,9 +80,66 @@ function receiptMatchesLine(
   return null;
 }
 
-function scoreLine(credit: SibStatementCredit, ctx: LineContext): BankStatementCandidate | null {
+function scoreAmount(
+  credit: SibStatementCredit,
+  line: ReceivableLine,
+  closed: boolean,
+  reasons: string[]
+): number {
+  let score = 0;
+  if (closed) {
+    const target = line.settled_paise > 0 ? line.settled_paise : line.amount_paise;
+    if (credit.amount_paise === target) {
+      score += 55;
+      reasons.push('Amount matches settled total (paid line)');
+    } else if (credit.amount_paise === line.amount_paise) {
+      score += 45;
+      reasons.push('Amount matches line total (paid line)');
+    } else {
+      const diff = Math.abs(credit.amount_paise - target);
+      if (diff <= 100) {
+        score += 15;
+        reasons.push('Amount within ₹1 of settled');
+      } else {
+        score -= 15;
+        reasons.push(
+          `Amount ₹${(credit.amount_paise / 100).toFixed(2)} vs settled ₹${(target / 100).toFixed(2)}`
+        );
+      }
+    }
+    return score;
+  }
+
+  if (credit.amount_paise === line.due_paise) {
+    score += 55;
+    reasons.push('Amount matches amount due');
+  } else if (credit.amount_paise === line.amount_paise) {
+    score += 35;
+    reasons.push('Amount matches line total (check fee vs gift)');
+  } else {
+    const diff = Math.abs(credit.amount_paise - line.due_paise);
+    if (diff <= 100) {
+      score += 15;
+      reasons.push('Amount within ₹1 of due');
+    } else {
+      score -= 15;
+      reasons.push(`Amount ₹${(credit.amount_paise / 100).toFixed(2)} vs due ₹${(line.due_paise / 100).toFixed(2)}`);
+    }
+  }
+  return score;
+}
+
+function scoreLine(
+  credit: SibStatementCredit,
+  ctx: LineContext,
+  includeClosedLines: boolean
+): BankStatementCandidate | null {
   const line = ctx.line;
-  if (line.due_paise < 1) return null;
+  const closed = line.due_paise < 1;
+  if (closed) {
+    if (!includeClosedLines) return null;
+    if (line.payment_status !== 'paid' && line.settled_paise < 1) return null;
+  }
 
   let score = 0;
   const reasons: string[] = [];
@@ -125,21 +182,9 @@ function scoreLine(credit: SibStatementCredit, ctx: LineContext): BankStatementC
     reasons.push('Phone digits in narration');
   }
 
-  if (credit.amount_paise === line.due_paise) {
-    score += 55;
-    reasons.push('Amount matches amount due');
-  } else if (credit.amount_paise === line.amount_paise) {
-    score += 35;
-    reasons.push('Amount matches line total (check fee vs gift)');
-  } else {
-    const diff = Math.abs(credit.amount_paise - line.due_paise);
-    if (diff <= 100) {
-      score += 15;
-      reasons.push('Amount within ₹1 of due');
-    } else {
-      score -= 15;
-      reasons.push(`Amount ₹${(credit.amount_paise / 100).toFixed(2)} vs due ₹${(line.due_paise / 100).toFixed(2)}`);
-    }
+  score += scoreAmount(credit, line, closed, reasons);
+  if (closed) {
+    reasons.unshift('Paid receivable line (preview only)');
   }
 
   if (score < 20) return null;
@@ -163,6 +208,7 @@ function scoreLine(credit: SibStatementCredit, ctx: LineContext): BankStatementC
     tier,
     match_score: score,
     reasons,
+    closed_line: closed,
   };
 }
 
@@ -228,10 +274,12 @@ function pickBest(candidates: BankStatementCandidate[]): BankStatementCandidate 
 export async function matchStatementCredits(input: {
   credits: SibStatementCredit[];
   eventId?: string;
+  includeClosedLines?: boolean;
 }): Promise<{ results: BankStatementCreditResult[]; error: string | null }> {
+  const includeClosed = Boolean(input.includeClosedLines);
   const { lines, error } = await loadReceivableLines({
     eventId: input.eventId,
-    status: 'open',
+    status: includeClosed ? 'all' : 'open',
   });
   if (error) return { results: [], error };
 
@@ -246,7 +294,7 @@ export async function matchStatementCredits(input: {
 
     const candidates: BankStatementCandidate[] = [];
     for (const ctx of contexts) {
-      const scored = scoreLine(credit, ctx);
+      const scored = scoreLine(credit, ctx, includeClosed);
       if (scored) candidates.push(scored);
     }
 

@@ -23,7 +23,17 @@ type Props = {
   onApplied: () => void;
   events: EventCatalog[];
   defaultEventId: string;
+  includeClosedLines?: boolean;
 };
+
+function isClosedCandidate(
+  results: BankStatementCreditResult[],
+  creditId: string,
+  lineKey: string
+): boolean {
+  const row = results.find((r) => r.credit.credit_id === creditId);
+  return Boolean(row?.candidates.find((c) => c.line_key === lineKey)?.closed_line);
+}
 
 type SettledRow = {
   credit: SibStatementCredit;
@@ -47,6 +57,7 @@ export default function BankStatementModal({
   onApplied,
   events,
   defaultEventId,
+  includeClosedLines = false,
 }: Props) {
   const titleId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -126,9 +137,18 @@ export default function BankStatementModal({
   }
 
   async function approveReconciliation() {
-    const applyRows = [...selected.entries()].filter(([, lineKey]) => lineKey);
+    const picked = [...selected.entries()].filter(([, lineKey]) => lineKey);
+    const applyRows = picked.filter(
+      ([creditId, lineKey]) => !isClosedCandidate(rows, creditId, lineKey)
+    );
+    if (picked.length > applyRows.length) {
+      setError(
+        'Paid-line matches are for preview only — deselect them or turn off “includes paid lines” before approving.'
+      );
+      return;
+    }
     if (!applyRows.length) {
-      setError('No matches selected. Adjust the list or cancel.');
+      setError('No open-line matches selected. Adjust the list or cancel.');
       return;
     }
     setBusy(true);
@@ -277,6 +297,14 @@ export default function BankStatementModal({
 
       {step === 'review' ? (
         <>
+          {includeClosedLines ? (
+            <p className="rounded-lg border border-primary/20 bg-surface-container-low p-3 text-label-sm text-on-surface-variant">
+              <strong>Testing mode:</strong> matching includes paid receivable lines. Those matches are
+              preview only and cannot be approved. Turn off “Statement match includes paid lines” on
+              Receivables when you go live.
+            </p>
+          ) : null}
+
           <div className="rounded-xl border border-jubilee-gold-light bg-secondary-container/30 p-4 text-body-sm space-y-2">
             <p>
               <strong>{rows.filter((r) => r.credit.kind === 'credit').length}</strong> new deposit(s) to
@@ -387,7 +415,11 @@ export default function BankStatementModal({
                         {isGateway ? (
                           <p className="text-label-sm text-on-surface-variant">Gateway / bulk</p>
                         ) : !candidates.length ? (
-                          <p className="text-label-sm text-on-surface-variant">No open line at this amount</p>
+                          <p className="text-label-sm text-on-surface-variant">
+                            {includeClosedLines
+                              ? 'No matching receivable line (open or paid)'
+                              : 'No open line at this amount'}
+                          </p>
                         ) : (
                           <select
                             className="w-full max-w-md rounded-lg border border-primary/15 px-2 py-1.5 text-body-sm bg-surface-ivory"
@@ -397,8 +429,8 @@ export default function BankStatementModal({
                             <option value="">— None —</option>
                           {candidates.map((c) => (
                             <option key={c.line_key} value={c.line_key}>
-                              [{c.tier}·{c.match_score}] {c.payer_name} · due{' '}
-                              {formatInrPaise(c.due_paise)}
+                              [{c.tier}·{c.match_score}] {c.payer_name}
+                              {c.closed_line ? ' · PAID' : ` · due ${formatInrPaise(c.due_paise)}`}
                               {c.registration_code ? ` · ${c.registration_code}` : ''}
                               {c.phone ? ` · ${c.phone}` : ''}
                               {c.bank_reference ? ` · ref ${c.bank_reference}` : ''} — {c.reasons[0]}

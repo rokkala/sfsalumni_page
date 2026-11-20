@@ -13,6 +13,9 @@ While testing **Receivables → bank statement** reconciliation:
 3. **Database migration** — `20261120140000_bank_statement_reconcile_flag.sql` adds the toggle column (default **on**).  
    Apply in Supabase SQL Editor if the checkbox cannot be saved.
 
+4. **Include paid lines (testing)** — `20261120170000_bank_statement_include_closed.sql` enables the Receivables checkbox  
+   “Statement match includes paid lines”. Leave **off** in production; use only while validating matches.
+
 This does **not** undo mark-paid actions already applied from a statement — use **Mark unpaid** on receivable lines or proof rejection if you settled by mistake.
 
 ## Whole-site rollback (Vercel)

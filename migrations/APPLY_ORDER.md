@@ -49,6 +49,7 @@ Run in SQL Editor, **filename order**:
 43. `20261117100000_offline_proofs_remittance.sql`
 44. `20261120140000_bank_statement_reconcile_flag.sql`
 45. `20261120160000_bank_statement_settled_credits.sql`
+46. `20261120170000_bank_statement_include_closed.sql`
 
 ## 2. Data — `02_data/`
 
