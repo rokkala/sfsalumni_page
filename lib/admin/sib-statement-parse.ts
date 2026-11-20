@@ -68,6 +68,7 @@ function nameFromUpi(particulars: string): string | null {
   for (const p of parts) {
     if (/RRN/i.test(p) || /^SFS/i.test(p)) continue;
     if (/^UPI$/i.test(p) || /^PA$/i.test(p) || /^PAYMENT$/i.test(p)) continue;
+    if (/^SBM\s+P2A/i.test(p)) continue;
     if (/^[A-Z]{2,5}$/.test(p)) continue;
     if (!/[A-Za-z]{2}/.test(p)) continue;
     if (p.replace(/[^A-Za-z]/g, '').length < 4) continue;

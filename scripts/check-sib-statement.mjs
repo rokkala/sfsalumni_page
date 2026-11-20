@@ -49,5 +49,6 @@ if (!imps10k || imps10k.kind !== 'credit' || imps10k.amount_paise !== 1_000_000)
   throw new Error('IMPS 632414345932 must be member credit not gateway');
 }
 if (!imps10k.receipt_refs.includes('632414345932')) throw new Error('IMPS ref extract');
+if (imps10k.payer_name) throw new Error('IMPS SBM P2A must not surface rail as payer name');
 
 console.log(`ok: ${credits.length} credits, ${gw.length} gateway, account ${acct}`);

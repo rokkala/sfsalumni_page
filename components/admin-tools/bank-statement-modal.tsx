@@ -8,11 +8,52 @@ import {
   autoSelectLineKeys,
   type BankStatementCreditResult,
 } from '@/lib/admin/bank-statement-types';
+import { creditEvidenceItems } from '@/lib/admin/bank-statement-credit-evidence';
 import type { SibStatementCredit } from '@/lib/admin/sib-statement-parse';
+import type { BankStatementCandidate } from '@/lib/admin/bank-statement-types';
 import type { EventCatalog } from '@/lib/events/types';
 
 function formatInrPaise(paise: number): string {
   return formatCostForDisplay(paise);
+}
+
+function MatchEvidence({ candidate }: { candidate: BankStatementCandidate | undefined }) {
+  if (!candidate) return null;
+  return (
+    <ul className="mt-2 space-y-0.5 text-label-sm text-on-surface-variant list-disc pl-4 max-w-md">
+      {candidate.reasons.map((reason) => (
+        <li key={reason}>{reason}</li>
+      ))}
+    </ul>
+  );
+}
+
+function BankCreditEvidence({ credit }: { credit: SibStatementCredit }) {
+  const evidence = creditEvidenceItems(credit);
+  return (
+    <div className="mt-2 space-y-2 text-label-sm">
+      <details className="rounded-md border border-outline-variant/80 bg-surface-container-lowest px-2 py-1">
+        <summary className="cursor-pointer font-medium text-on-surface-variant select-none">
+          Full bank narration
+        </summary>
+        <p className="mt-1 break-all tabular-nums text-on-surface">{credit.particulars}</p>
+      </details>
+      {evidence.length > 0 ? (
+        <dl className="rounded-md border border-outline-variant/60 bg-surface-container-low/50 px-2 py-1.5 space-y-1">
+          <dt className="sr-only">Parsed evidence</dt>
+          {evidence.map((item) => (
+            <div key={item.id}>
+              <dt className="text-on-surface-variant">{item.label}</dt>
+              <dd className="break-all font-medium text-on-surface">{item.value}</dd>
+              {item.hint ? <dd className="text-on-surface-variant mt-0.5">{item.hint}</dd> : null}
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="text-on-surface-variant">No refs or name parsed — try amount or manual pick.</p>
+      )}
+    </div>
+  );
 }
 
 type Step = 'upload' | 'review';
@@ -374,6 +415,8 @@ export default function BankStatementModal({
                   const { credit, candidates, best } = row;
                   const isGateway = credit.kind === 'gateway';
                   const chosen = selected.get(credit.credit_id) || '';
+                  const chosenCandidate =
+                    candidates.find((c) => c.line_key === chosen) || best || undefined;
                   return (
                     <tr key={credit.credit_id} className="border-t border-outline-variant/60 align-top">
                       <td className="px-2 py-2">
@@ -395,48 +438,51 @@ export default function BankStatementModal({
                           />
                         )}
                       </td>
-                      <td className="px-2 py-2 max-w-xs">
-                        <p className="tabular-nums">
+                      <td className="px-2 py-2 max-w-sm">
+                        <p className="tabular-nums font-medium">
                           {credit.stmt_date} · {formatInrPaise(credit.amount_paise)}
                         </p>
-                        <p className="text-label-sm text-on-surface-variant break-all mt-1">
-                          {credit.particulars.length > 120
-                            ? `${credit.particulars.slice(0, 120)}…`
-                            : credit.particulars}
-                        </p>
-                        {credit.rrn ? (
-                          <p className="text-label-sm mt-1 tabular-nums">RRN {credit.rrn}</p>
-                        ) : null}
-                        {credit.payer_name ? (
-                          <p className="text-label-sm">{credit.payer_name}</p>
-                        ) : null}
+                        {isGateway ? null : <BankCreditEvidence credit={credit} />}
                       </td>
                       <td className="px-2 py-2">
                         {isGateway ? (
-                          <p className="text-label-sm text-on-surface-variant">Gateway / bulk</p>
+                          <div className="text-label-sm text-on-surface-variant space-y-1 max-w-md">
+                            <p>Gateway / bulk settlement — not a member deposit.</p>
+                            <BankCreditEvidence credit={credit} />
+                          </div>
                         ) : !candidates.length ? (
-                          <p className="text-label-sm text-on-surface-variant">
-                            {includeClosedLines
-                              ? 'No matching receivable line (open or paid)'
-                              : 'No open line at this amount'}
-                          </p>
+                          <div className="text-label-sm text-on-surface-variant space-y-1 max-w-md">
+                            <p>
+                              {includeClosedLines
+                                ? 'No matching receivable line (open or paid)'
+                                : 'No open line at this amount'}
+                            </p>
+                            <p>
+                              Check receivables for Ref{' '}
+                              {credit.receipt_refs[0] || credit.rrn || '—'} at{' '}
+                              {formatInrPaise(credit.amount_paise)}, or enable paid lines while
+                              testing.
+                            </p>
+                          </div>
                         ) : (
-                          <select
-                            className="w-full max-w-md rounded-lg border border-primary/15 px-2 py-1.5 text-body-sm bg-surface-ivory"
-                            value={chosen}
-                            onChange={(ev) => pickMatch(credit.credit_id, ev.target.value)}
-                          >
-                            <option value="">— None —</option>
-                          {candidates.map((c) => (
-                            <option key={c.line_key} value={c.line_key}>
-                              [{c.tier}·{c.match_score}] {c.payer_name}
-                              {c.closed_line ? ' · PAID' : ` · due ${formatInrPaise(c.due_paise)}`}
-                              {c.registration_code ? ` · ${c.registration_code}` : ''}
-                              {c.phone ? ` · ${c.phone}` : ''}
-                              {c.bank_reference ? ` · ref ${c.bank_reference}` : ''} — {c.reasons[0]}
-                            </option>
-                          ))}
-                          </select>
+                          <div className="max-w-md space-y-1">
+                            <select
+                              className="w-full rounded-lg border border-primary/15 px-2 py-1.5 text-body-sm bg-surface-ivory"
+                              value={chosen}
+                              onChange={(ev) => pickMatch(credit.credit_id, ev.target.value)}
+                            >
+                              <option value="">— None —</option>
+                              {candidates.map((c) => (
+                                <option key={c.line_key} value={c.line_key}>
+                                  [{c.tier}·{c.match_score}] {c.payer_name}
+                                  {c.closed_line ? ' · PAID' : ` · due ${formatInrPaise(c.due_paise)}`}
+                                  {c.registration_code ? ` · ${c.registration_code}` : ''}
+                                  {c.bank_reference ? ` · ref ${c.bank_reference}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <MatchEvidence candidate={chosenCandidate} />
+                          </div>
                         )}
                       </td>
                     </tr>
