@@ -6,6 +6,7 @@ import AdminShell from '@/components/admin-shell';
 import { formatCostForDisplay } from '@/lib/registration/registration';
 import type { ReceivableLine } from '@/lib/admin/receivable-lines';
 import type { EventCatalog } from '@/lib/events/types';
+import BankStatementModal from '@/components/admin-tools/bank-statement-modal';
 
 const KIND_LABEL: Record<ReceivableLine['kind'], string> = {
   registration_fee: 'Fee',
@@ -28,6 +29,7 @@ export default function AdminReceivablesPage() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [statementOpen, setStatementOpen] = useState(false);
 
   const load = useCallback(async (opts?: { silentCashfreeMessage?: boolean }) => {
     const params = new URLSearchParams();
@@ -140,7 +142,7 @@ export default function AdminReceivablesPage() {
         donations. <strong className="font-semibold text-on-surface">Cashfree</strong> lines with an order id are
         polled on each refresh and marked paid when the PG shows PAID (webhook backstop).{' '}
         <strong className="font-semibold text-on-surface">Approve proof &amp; mark paid</strong> is for Bank / UPI.
-        Bank statement matching comes later.
+        Use <strong className="font-semibold text-on-surface">Upload statement</strong> to match SIB PDF deposits.
       </p>
 
       {error ? (
@@ -162,6 +164,16 @@ export default function AdminReceivablesPage() {
         <span>
           Received: <strong>{formatCostForDisplay(summary.settled_paise)}</strong>
         </span>
+      </div>
+
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={() => setStatementOpen(true)}
+          className="rounded-lg border border-primary/25 bg-surface-ivory px-4 py-2.5 text-label-sm font-semibold text-primary cursor-pointer hover:bg-surface-container"
+        >
+          Upload bank statement
+        </button>
       </div>
 
       <div className="flex flex-col md:flex-row gap-3 mb-5">
@@ -333,6 +345,13 @@ export default function AdminReceivablesPage() {
           </tbody>
         </table>
       </div>
+      <BankStatementModal
+        open={statementOpen}
+        onClose={() => setStatementOpen(false)}
+        onApplied={() => void load({ silentCashfreeMessage: true }).catch(() => undefined)}
+        events={events}
+        defaultEventId={eventId}
+      />
     </AdminShell>
   );
 }

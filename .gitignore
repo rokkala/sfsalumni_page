@@ -39,6 +39,9 @@ _local.html
 _probe.html
 /graphify-out/
 supabase/.temp/
+# Local bank statement samples (PII)
+A569*.pdf
+
 # Live DB dumps (PII + password hashes) — regenerate with scripts/dump-supabase-inserts.mjs
 migrations/02_data/full_data_dump.sql
 migrations/02_data/optional_users.sql
