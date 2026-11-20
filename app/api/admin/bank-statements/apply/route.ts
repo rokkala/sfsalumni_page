@@ -8,11 +8,19 @@ import {
   applyRegistrationDonationPayment,
   applyRegistrationFeePayment,
 } from '@/lib/events/mark-paid';
+import { recordSettledCreditFingerprints } from '@/lib/admin/bank-statement-skip-settled';
 import { createAdminClient } from '@/lib/supabase-admin';
 
 export const dynamic = 'force-dynamic';
 
-type ApplyRow = { line_key?: unknown; action?: unknown };
+type ApplyRow = {
+  line_key?: unknown;
+  action?: unknown;
+  fingerprint?: unknown;
+  stmt_date?: unknown;
+  amount_paise?: unknown;
+  rrn?: unknown;
+};
 
 async function donationLinkedToRegistration(donationId: string): Promise<boolean> {
   const admin = createAdminClient();
@@ -43,6 +51,13 @@ export async function POST(request: Request) {
 
   const applied: string[] = [];
   const skipped: { line_key: string; error: string }[] = [];
+  const fingerprintRows: {
+    fingerprint: string;
+    stmt_date: string;
+    amount_paise: number;
+    rrn: string | null;
+    line_key: string | null;
+  }[] = [];
 
   for (const row of rows.slice(0, 50)) {
     const lineKey = String(row.line_key || '').trim();
@@ -92,6 +107,7 @@ export async function POST(request: Request) {
         continue;
       }
       applied.push(lineKey);
+      recordFingerprintRow(row, lineKey, fingerprintRows);
       continue;
     }
 
@@ -112,11 +128,38 @@ export async function POST(request: Request) {
       }
     }
     applied.push(lineKey);
+    recordFingerprintRow(row, lineKey, fingerprintRows);
   }
+
+  await recordSettledCreditFingerprints(fingerprintRows);
 
   return NextResponse.json({
     applied_count: applied.length,
     applied,
     skipped,
+  });
+}
+
+function recordFingerprintRow(
+  row: ApplyRow,
+  lineKey: string,
+  out: {
+    fingerprint: string;
+    stmt_date: string;
+    amount_paise: number;
+    rrn: string | null;
+    line_key: string | null;
+  }[]
+): void {
+  const fingerprint = String(row.fingerprint || '').trim();
+  if (!fingerprint) return;
+  const amount = Math.floor(Number(row.amount_paise) || 0);
+  if (amount < 1) return;
+  out.push({
+    fingerprint,
+    stmt_date: String(row.stmt_date || '').trim() || '—',
+    amount_paise: amount,
+    rrn: row.rrn ? String(row.rrn) : null,
+    line_key: lineKey,
   });
 }

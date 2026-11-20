@@ -3,10 +3,12 @@
 import { useCallback, useId, useRef, useState } from 'react';
 import { ModalCloseButton, ModalOverlay } from '@/components/modal-shell';
 import { formatCostForDisplay } from '@/lib/registration/registration';
+import { bankStatementCreditFingerprint } from '@/lib/admin/bank-statement-credit-fingerprint';
 import {
   autoSelectLineKeys,
   type BankStatementCreditResult,
 } from '@/lib/admin/bank-statement-types';
+import type { SibStatementCredit } from '@/lib/admin/sib-statement-parse';
 import type { EventCatalog } from '@/lib/events/types';
 
 function formatInrPaise(paise: number): string {
@@ -23,10 +25,18 @@ type Props = {
   defaultEventId: string;
 };
 
+type SettledRow = {
+  credit: SibStatementCredit;
+  fingerprint: string;
+  reason: string;
+};
+
 type ApiResult = {
   account_number?: string | null;
   suggested_matches?: number;
   member_credit_count?: number;
+  already_settled_count?: number;
+  already_settled?: SettledRow[];
   results?: BankStatementCreditResult[];
   error?: string;
 };
@@ -47,6 +57,8 @@ export default function BankStatementModal({
   const [error, setError] = useState('');
   const [accountNumber, setAccountNumber] = useState<string | null>(null);
   const [rows, setRows] = useState<BankStatementCreditResult[]>([]);
+  const [alreadySettled, setAlreadySettled] = useState<SettledRow[]>([]);
+  const [showSettled, setShowSettled] = useState(false);
   const [selected, setSelected] = useState<Map<string, string>>(new Map());
 
   const reset = useCallback(() => {
@@ -55,6 +67,8 @@ export default function BankStatementModal({
     setError('');
     setAccountNumber(null);
     setRows([]);
+    setAlreadySettled([]);
+    setShowSettled(false);
     setSelected(new Map());
     if (fileRef.current) fileRef.current.value = '';
   }, []);
@@ -70,6 +84,8 @@ export default function BankStatementModal({
     setStep('upload');
     setError('');
     setRows([]);
+    setAlreadySettled([]);
+    setShowSettled(false);
     setSelected(new Map());
     setAccountNumber(null);
   }, [busy]);
@@ -100,6 +116,7 @@ export default function BankStatementModal({
       }
       const list = payload.results || [];
       setRows(list);
+      setAlreadySettled(payload.already_settled || []);
       setAccountNumber(payload.account_number ?? null);
       setSelected(autoSelectLineKeys(list));
       setStep('review');
@@ -121,7 +138,17 @@ export default function BankStatementModal({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          rows: applyRows.map(([, line_key]) => ({ line_key })),
+          rows: applyRows.map(([credit_id, line_key]) => {
+            const match = rows.find((r) => r.credit.credit_id === credit_id);
+            const credit = match?.credit;
+            return {
+              line_key,
+              fingerprint: credit ? bankStatementCreditFingerprint(credit) : undefined,
+              stmt_date: credit?.stmt_date,
+              amount_paise: credit?.amount_paise,
+              rrn: credit?.rrn,
+            };
+          }),
         }),
       });
       const payload = await res.json().catch(() => ({}));
@@ -250,24 +277,60 @@ export default function BankStatementModal({
 
       {step === 'review' ? (
         <>
-          <div className="rounded-xl border border-jubilee-gold-light bg-secondary-container/30 p-4 text-body-sm">
+          <div className="rounded-xl border border-jubilee-gold-light bg-secondary-container/30 p-4 text-body-sm space-y-2">
             <p>
-              Parsed <strong>{rows.filter((r) => r.credit.kind === 'credit').length}</strong> member deposit(s);
-              auto-selected <strong>{autoCount}</strong>
-              {unmatchedMember > 0 ? (
+              <strong>{rows.filter((r) => r.credit.kind === 'credit').length}</strong> new deposit(s) to
+              review (already settled rows hidden).
+              {alreadySettled.length > 0 ? (
                 <>
-                  ; <strong>{unmatchedMember}</strong> with no candidate — pick manually or skip
+                  {' '}
+                  <strong>{alreadySettled.length}</strong> skipped as previously matched / paid.
                 </>
               ) : null}
               {accountNumber ? (
                 <>
                   {' '}
-                  on account <span className="tabular-nums">{accountNumber}</span>
+                  Account <span className="tabular-nums">{accountNumber}</span>.
+                </>
+              ) : null}{' '}
+              Auto-selected <strong>{autoCount}</strong>; for approval <strong>{approvedCount}</strong>.
+              {unmatchedMember > 0 ? (
+                <>
+                  {' '}
+                  <strong>{unmatchedMember}</strong> need manual match.
                 </>
               ) : null}
-              . Selected for approval: <strong>{approvedCount}</strong>.
             </p>
+            {alreadySettled.length > 0 ? (
+              <label className="flex items-center gap-2 text-label-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showSettled}
+                  onChange={(e) => setShowSettled(e.target.checked)}
+                  className="size-4"
+                />
+                Show {alreadySettled.length} already-settled bank line(s)
+              </label>
+            ) : null}
           </div>
+
+          {showSettled && alreadySettled.length > 0 ? (
+            <details className="rounded-lg border border-outline-variant p-3 text-body-sm" open>
+              <summary className="cursor-pointer font-medium text-on-surface-variant">
+                Already settled (not applied again)
+              </summary>
+              <ul className="mt-2 space-y-2 max-h-40 overflow-y-auto">
+                {alreadySettled.map((item) => (
+                  <li key={item.fingerprint} className="text-label-sm text-on-surface-variant">
+                    <span className="tabular-nums">
+                      {item.credit.stmt_date} · {formatInrPaise(item.credit.amount_paise)}
+                    </span>
+                    {item.credit.rrn ? ` · RRN ${item.credit.rrn}` : null} — {item.reason}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
 
           <div className="min-h-0 flex-1 overflow-auto">
             <table className="w-full text-left text-body-sm border border-outline-variant rounded-xl overflow-hidden">

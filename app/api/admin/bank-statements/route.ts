@@ -4,7 +4,9 @@ import {
   parseStatementAccountNumber,
 } from '@/lib/admin/sib-statement-pdf';
 import { parseSibStatementCredits } from '@/lib/admin/sib-statement-parse';
+import { bankStatementCreditFingerprint } from '@/lib/admin/bank-statement-credit-fingerprint';
 import { matchStatementCredits } from '@/lib/admin/bank-statement-match';
+import { partitionSettledCredits } from '@/lib/admin/bank-statement-skip-settled';
 import { isBankStatementReconcileEnabled } from '@/lib/admin/bank-statement-feature';
 import { requireVerifiedAdmin } from '@/lib/auth/admin-guard';
 
@@ -70,8 +72,10 @@ export async function POST(request: Request) {
     );
   }
 
+  const { to_match, already_settled } = await partitionSettledCredits(credits);
+
   const { results, error } = await matchStatementCredits({
-    credits,
+    credits: to_match,
     eventId: eventId || undefined,
   });
   if (error) {
@@ -86,6 +90,12 @@ export async function POST(request: Request) {
     account_number,
     credit_count: credits.length,
     member_credit_count: memberCredits.length,
+    already_settled_count: already_settled.length,
+    already_settled: already_settled.map((row) => ({
+      credit: row.credit,
+      fingerprint: bankStatementCreditFingerprint(row.credit),
+      reason: row.reason,
+    })),
     suggested_matches: matched,
     results,
   });
