@@ -14,8 +14,8 @@ export type SibStatementCredit = {
 const TXN_BLOCK =
   /(\d{2}-\d{2}-\d{2})\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})Cr/g;
 
-const GATEWAY_RE =
-  /cashfree|api banking eb\/payout|sbm p2a\/sbm p2a/i;
+/** Bulk settlement rails only — not member IMPS labels like `SBM P2A` in narration. */
+const GATEWAY_RE = /cashfree|api banking eb\/payout/i;
 
 function rupeesToPaise(raw: string): number {
   const n = Number(String(raw).replace(/,/g, ''));

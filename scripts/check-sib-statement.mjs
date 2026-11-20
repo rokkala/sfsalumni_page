@@ -44,4 +44,10 @@ if (!payerNameFromParticulars(upi.particulars)) throw new Error('name');
 const gw = credits.filter((c) => c.kind === 'gateway');
 if (gw.length < 3) throw new Error('expected gateway rows');
 
+const imps10k = credits.find((c) => c.particulars.includes('632414345932'));
+if (!imps10k || imps10k.kind !== 'credit' || imps10k.amount_paise !== 1_000_000) {
+  throw new Error('IMPS 632414345932 must be member credit not gateway');
+}
+if (!imps10k.receipt_refs.includes('632414345932')) throw new Error('IMPS ref extract');
+
 console.log(`ok: ${credits.length} credits, ${gw.length} gateway, account ${acct}`);
