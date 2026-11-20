@@ -6,7 +6,7 @@ import { formatCostForDisplay } from '@/lib/registration/registration';
 import {
   autoSelectLineKeys,
   type BankStatementCreditResult,
-} from '@/lib/admin/bank-statement-match';
+} from '@/lib/admin/bank-statement-types';
 import type { EventCatalog } from '@/lib/events/types';
 
 function formatInrPaise(paise: number): string {
