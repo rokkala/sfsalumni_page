@@ -3,7 +3,10 @@
 import { useCallback, useId, useRef, useState } from 'react';
 import { ModalCloseButton, ModalOverlay } from '@/components/modal-shell';
 import { formatCostForDisplay } from '@/lib/registration/registration';
-import type { BankStatementCreditResult } from '@/lib/admin/bank-statement-match';
+import {
+  autoSelectLineKeys,
+  type BankStatementCreditResult,
+} from '@/lib/admin/bank-statement-match';
 import type { EventCatalog } from '@/lib/events/types';
 
 function formatInrPaise(paise: number): string {
@@ -27,17 +30,6 @@ type ApiResult = {
   results?: BankStatementCreditResult[];
   error?: string;
 };
-
-function autoSelectMatches(list: BankStatementCreditResult[]): Map<string, string> {
-  const next = new Map<string, string>();
-  for (const r of list) {
-    if (r.credit.kind !== 'credit' || !r.best) continue;
-    if (r.best.tier === 'high' || r.best.tier === 'medium') {
-      next.set(r.credit.credit_id, r.best.line_key);
-    }
-  }
-  return next;
-}
 
 export default function BankStatementModal({
   open,
@@ -109,7 +101,7 @@ export default function BankStatementModal({
       const list = payload.results || [];
       setRows(list);
       setAccountNumber(payload.account_number ?? null);
-      setSelected(autoSelectMatches(list));
+      setSelected(autoSelectLineKeys(list));
       setStep('review');
     } finally {
       setBusy(false);
@@ -163,8 +155,9 @@ export default function BankStatementModal({
   }
 
   const approvedCount = [...selected.values()].filter(Boolean).length;
-  const autoCount = rows.filter(
-    (r) => r.credit.kind === 'credit' && r.best && (r.best.tier === 'high' || r.best.tier === 'medium')
+  const autoCount = rows.filter((r) => selected.has(r.credit.credit_id)).length;
+  const unmatchedMember = rows.filter(
+    (r) => r.credit.kind === 'credit' && !r.candidates.length
   ).length;
 
   if (!open) return null;
@@ -230,7 +223,7 @@ export default function BankStatementModal({
                 onChange={(ev) => setEventId(ev.target.value)}
                 className="rounded-lg border border-primary/15 px-3 py-2 text-body-sm bg-surface-ivory"
               >
-                <option value="">All open lines</option>
+                <option value="">All open lines (recommended)</option>
                 {events.map((ev) => (
                   <option key={ev.id} value={ev.id}>
                     {ev.title}
@@ -259,7 +252,13 @@ export default function BankStatementModal({
         <>
           <div className="rounded-xl border border-jubilee-gold-light bg-secondary-container/30 p-4 text-body-sm">
             <p>
-              Auto-matched <strong>{autoCount}</strong> deposit(s)
+              Parsed <strong>{rows.filter((r) => r.credit.kind === 'credit').length}</strong> member deposit(s);
+              auto-selected <strong>{autoCount}</strong>
+              {unmatchedMember > 0 ? (
+                <>
+                  ; <strong>{unmatchedMember}</strong> with no candidate — pick manually or skip
+                </>
+              ) : null}
               {accountNumber ? (
                 <>
                   {' '}
@@ -333,12 +332,15 @@ export default function BankStatementModal({
                             onChange={(ev) => pickMatch(credit.credit_id, ev.target.value)}
                           >
                             <option value="">— None —</option>
-                            {candidates.map((c) => (
-                              <option key={c.line_key} value={c.line_key}>
-                                [{c.tier}] {c.payer_name} · {formatInrPaise(c.due_paise)}
-                                {c.phone ? ` · ${c.phone}` : ''} — {c.reasons.join(', ')}
-                              </option>
-                            ))}
+                          {candidates.map((c) => (
+                            <option key={c.line_key} value={c.line_key}>
+                              [{c.tier}·{c.match_score}] {c.payer_name} · due{' '}
+                              {formatInrPaise(c.due_paise)}
+                              {c.registration_code ? ` · ${c.registration_code}` : ''}
+                              {c.phone ? ` · ${c.phone}` : ''}
+                              {c.bank_reference ? ` · ref ${c.bank_reference}` : ''} — {c.reasons[0]}
+                            </option>
+                          ))}
                           </select>
                         )}
                       </td>
