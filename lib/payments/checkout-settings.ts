@@ -181,38 +181,3 @@ export async function setBankStatementIncludeClosedLines(enabled: boolean): Prom
   }
   return { ok: true };
 }
-
-export async function setBankStatementIncludeClosedLines(enabled: boolean): Promise<
-  { ok: true } | { ok: false; error: string }
-> {
-  const admin = createAdminClient();
-  const existing = await loadCheckoutSettings(admin);
-  const { error } = await admin.from('payment_checkout_settings').upsert(
-    {
-      id: ROW_ID,
-      online_checkout_enabled: existing.online_checkout_enabled,
-      bank_statement_reconcile_enabled: existing.bank_statement_reconcile_enabled,
-      bank_statement_include_closed_lines: enabled,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'id' }
-  );
-  if (error) {
-    console.error('setBankStatementIncludeClosedLines', error);
-    if (checkoutSettingsTableMissing(error)) {
-      return {
-        ok: false,
-        error: `payment_checkout_settings is not set up yet. Run migration ${CHECKOUT_SETTINGS_MIGRATION} in Supabase (see migrations/APPLY_ORDER.md).`,
-      };
-    }
-    if (/bank_statement_include_closed_lines/i.test(error.message || '')) {
-      return {
-        ok: false,
-        error:
-          'Run migration 20261120170000_bank_statement_include_closed.sql in Supabase for the include-closed-lines toggle.',
-      };
-    }
-    return { ok: false, error: 'Could not save bank statement settings' };
-  }
-  return { ok: true };
-}
