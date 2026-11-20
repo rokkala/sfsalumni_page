@@ -68,6 +68,8 @@ Canonical schema files also live under [`supabase/migrations/`](supabase/migrati
 2. Set all variables from `.env.example` (Supabase, `AUTH_SECRET`, Razorpay, Resend, VAPID, `GATE_PIN`, `NEXT_PUBLIC_APP_URL`)  
 3. Deploy, then point the Razorpay webhook at `https://<host>/api/payments/webhook`  
 
+Rollback and feature kill-switches (bank statement testing, promote previous deployment): [`docs/DEPLOY_ROLLBACK.md`](docs/DEPLOY_ROLLBACK.md). NPM helpers: `deploy:prod`, `deploy:rollback`, `deploy:list`.
+
 ## License / privacy
 
 Private school alumni project. Live database dumps under `migrations/02_data/` are gitignored (PII + password hashes) — regenerate locally with `node scripts/dump-supabase-inserts.mjs`.

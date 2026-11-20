@@ -10,6 +10,8 @@ function formatInrPaise(paise: number): string {
   return formatCostForDisplay(paise);
 }
 
+type Step = 'upload' | 'review';
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -26,6 +28,17 @@ type ApiResult = {
   error?: string;
 };
 
+function autoSelectMatches(list: BankStatementCreditResult[]): Map<string, string> {
+  const next = new Map<string, string>();
+  for (const r of list) {
+    if (r.credit.kind !== 'credit' || !r.best) continue;
+    if (r.best.tier === 'high' || r.best.tier === 'medium') {
+      next.set(r.credit.credit_id, r.best.line_key);
+    }
+  }
+  return next;
+}
+
 export default function BankStatementModal({
   open,
   onClose,
@@ -35,30 +48,41 @@ export default function BankStatementModal({
 }: Props) {
   const titleId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [step, setStep] = useState<Step>('upload');
   const [password, setPassword] = useState('');
   const [eventId, setEventId] = useState(defaultEventId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [summary, setSummary] = useState('');
+  const [accountNumber, setAccountNumber] = useState<string | null>(null);
   const [rows, setRows] = useState<BankStatementCreditResult[]>([]);
   const [selected, setSelected] = useState<Map<string, string>>(new Map());
 
   const reset = useCallback(() => {
+    setStep('upload');
     setPassword('');
     setError('');
-    setSummary('');
+    setAccountNumber(null);
     setRows([]);
     setSelected(new Map());
     if (fileRef.current) fileRef.current.value = '';
   }, []);
 
-  const close = useCallback(() => {
+  const cancelWithoutApply = useCallback(() => {
     if (busy) return;
     reset();
     onClose();
   }, [busy, onClose, reset]);
 
-  async function onUpload(e: React.FormEvent) {
+  const backToUpload = useCallback(() => {
+    if (busy) return;
+    setStep('upload');
+    setError('');
+    setRows([]);
+    setSelected(new Map());
+    setAccountNumber(null);
+  }, [busy]);
+
+  async function runAutoRecon(e: React.FormEvent) {
     e.preventDefault();
     const file = fileRef.current?.files?.[0];
     if (!file) {
@@ -71,9 +95,6 @@ export default function BankStatementModal({
     }
     setBusy(true);
     setError('');
-    setSummary('');
-    setRows([]);
-    setSelected(new Map());
     try {
       const fd = new FormData();
       fd.set('file', file);
@@ -87,30 +108,18 @@ export default function BankStatementModal({
       }
       const list = payload.results || [];
       setRows(list);
-      const next = new Map<string, string>();
-      for (const r of list) {
-        if (r.best && r.credit.kind === 'credit' && r.best.tier === 'high') {
-          next.set(r.credit.credit_id, r.best.line_key);
-        }
-      }
-      setSelected(next);
-      const acct = payload.account_number ? ` · A/C ${payload.account_number}` : '';
-      setSummary(
-        `${payload.member_credit_count ?? 0} member credit(s), ${payload.suggested_matches ?? 0} high-confidence match(es)${acct}`
-      );
+      setAccountNumber(payload.account_number ?? null);
+      setSelected(autoSelectMatches(list));
+      setStep('review');
     } finally {
       setBusy(false);
     }
   }
 
-  async function applySelected() {
-    const applyRows = [...selected.entries()].map(([credit_id, line_key]) => ({
-      credit_id,
-      line_key,
-      action: 'auto',
-    }));
+  async function approveReconciliation() {
+    const applyRows = [...selected.entries()].filter(([, lineKey]) => lineKey);
     if (!applyRows.length) {
-      setError('Select at least one line to apply.');
+      setError('No matches selected. Adjust the list or cancel.');
       return;
     }
     setBusy(true);
@@ -119,19 +128,22 @@ export default function BankStatementModal({
       const res = await fetch('/api/admin/bank-statements/apply', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ rows: applyRows.map((r) => ({ line_key: r.line_key })) }),
+        body: JSON.stringify({
+          rows: applyRows.map(([, line_key]) => ({ line_key })),
+        }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(payload.error || 'Apply failed');
+        setError(payload.error || 'Could not approve reconciliation');
         return;
       }
       const n = Number(payload.applied_count) || 0;
       const skip = (payload.skipped || []) as { line_key: string; error: string }[];
-      setSummary(`Applied ${n} line(s).${skip.length ? ` ${skip.length} skipped.` : ''}`);
       onApplied();
       if (skip.length) {
-        setError(skip.map((s) => `${s.line_key}: ${s.error}`).join(' · '));
+        setError(
+          `Approved ${n}; ${skip.length} skipped: ${skip.map((s) => s.error).join(' · ')}`
+        );
       } else {
         reset();
         onClose();
@@ -150,171 +162,212 @@ export default function BankStatementModal({
     });
   }
 
+  const approvedCount = [...selected.values()].filter(Boolean).length;
+  const autoCount = rows.filter(
+    (r) => r.credit.kind === 'credit' && r.best && (r.best.tier === 'high' || r.best.tier === 'medium')
+  ).length;
+
   if (!open) return null;
 
   return (
     <ModalOverlay
       titleId={titleId}
-      backdropLabel="Close bank statement upload"
-      onBackdropClose={close}
+      backdropLabel={step === 'review' ? 'Cancel reconciliation' : 'Close bank statement upload'}
+      onBackdropClose={step === 'review' ? backToUpload : cancelWithoutApply}
       disableBackdropClose={busy}
-      panelClassName="space-y-4 overflow-y-auto p-5 sm:max-w-4xl max-h-[90vh]"
+      panelClassName="space-y-4 overflow-y-auto p-5 sm:max-w-4xl max-h-[90vh] flex flex-col"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 id={titleId} className="text-headline-sm text-primary">
-            Bank statement reconciliation
+            {step === 'upload' ? 'Bank statement upload' : 'Auto-reconciliation preview'}
           </h3>
           <p className="mt-1 text-body-sm text-on-surface-variant">
-            Upload a South Indian Bank PDF. We match deposits to open receivable lines by UTR, SFS ref,
-            name, and amount.
+            {step === 'upload' ? (
+              <>
+                Upload a South Indian Bank PDF. We parse deposits and suggest registration matches — nothing
+                is marked paid until you approve.
+              </>
+            ) : (
+              <>
+                Review auto-matched lines. <strong className="font-semibold text-on-surface">Approve</strong>{' '}
+                to settle receivables; <strong className="font-semibold text-on-surface">Cancel</strong> leaves
+                everything unchanged.
+              </>
+            )}
           </p>
         </div>
-        <ModalCloseButton disabled={busy} onClick={close} />
+        <ModalCloseButton disabled={busy} onClick={cancelWithoutApply} />
       </div>
 
-      <form onSubmit={(e) => void onUpload(e)} className="space-y-3 rounded-xl border border-outline-variant p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <label className="flex flex-1 min-w-[12rem] flex-col gap-1 text-label-sm">
-            Statement PDF
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".pdf,application/pdf"
-              className="text-body-sm file:mr-2 file:rounded-lg file:border-0 file:bg-secondary-container file:px-3 file:py-2"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-label-sm sm:w-48">
-            PDF password
-            <input
-              type="password"
-              autoComplete="off"
-              value={password}
-              onChange={(ev) => setPassword(ev.target.value)}
-              className="rounded-lg border border-primary/15 px-3 py-2 text-body-sm bg-surface-ivory"
-              placeholder="Customer ID or your PDF lock"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-label-sm sm:min-w-[14rem]">
-            Limit to event
-            <select
-              value={eventId}
-              onChange={(ev) => setEventId(ev.target.value)}
-              className="rounded-lg border border-primary/15 px-3 py-2 text-body-sm bg-surface-ivory"
-            >
-              <option value="">All open lines</option>
-              {events.map((ev) => (
-                <option key={ev.id} value={ev.id}>
-                  {ev.title}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-lg bg-primary text-on-primary px-4 py-2.5 text-label-sm font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
-        >
-          {busy && !rows.length ? 'Parsing…' : 'Upload & match'}
-        </button>
-      </form>
+      {step === 'upload' ? (
+        <form onSubmit={(e) => void runAutoRecon(e)} className="space-y-3 rounded-xl border border-outline-variant p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <label className="flex flex-1 min-w-[12rem] flex-col gap-1 text-label-sm">
+              Statement PDF
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".pdf,application/pdf"
+                className="text-body-sm file:mr-2 file:rounded-lg file:border-0 file:bg-secondary-container file:px-3 file:py-2"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-label-sm sm:w-48">
+              PDF password
+              <input
+                type="password"
+                autoComplete="off"
+                value={password}
+                onChange={(ev) => setPassword(ev.target.value)}
+                className="rounded-lg border border-primary/15 px-3 py-2 text-body-sm bg-surface-ivory"
+                placeholder="Customer ID or your PDF lock"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-label-sm sm:min-w-[14rem]">
+              Limit to event
+              <select
+                value={eventId}
+                onChange={(ev) => setEventId(ev.target.value)}
+                className="rounded-lg border border-primary/15 px-3 py-2 text-body-sm bg-surface-ivory"
+              >
+                <option value="">All open lines</option>
+                {events.map((ev) => (
+                  <option key={ev.id} value={ev.id}>
+                    {ev.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded-lg bg-primary text-on-primary px-4 py-2.5 text-label-sm font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+          >
+            {busy ? 'Running auto-recon…' : 'Run auto-reconciliation'}
+          </button>
+        </form>
+      ) : null}
 
       {error ? (
-        <p className="rounded-lg bg-error-container text-error text-body-sm p-3">{error}</p>
-      ) : null}
-      {summary ? (
-        <p className="rounded-xl border border-jubilee-gold-light bg-secondary-container/30 p-3 text-body-sm">
-          {summary}
+        <p className="rounded-lg bg-error-container text-error text-body-sm p-3" role="alert">
+          {error}
         </p>
       ) : null}
 
-      {rows.length > 0 ? (
-        <div className="space-y-4">
-          <table className="w-full text-left text-body-sm border border-outline-variant rounded-xl overflow-hidden">
-            <thead className="bg-surface-container text-label-sm text-on-surface-variant">
-              <tr>
-                <th className="px-2 py-2">Apply</th>
-                <th className="px-2 py-2">Statement</th>
-                <th className="px-2 py-2">Match</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const { credit, candidates, best } = row;
-                const isGateway = credit.kind === 'gateway';
-                const chosen = selected.get(credit.credit_id) || '';
-                return (
-                  <tr key={credit.credit_id} className="border-t border-outline-variant/60 align-top">
-                    <td className="px-2 py-2">
-                      {isGateway ? (
-                        <span className="text-label-sm text-on-surface-variant">PG</span>
-                      ) : (
-                        <input
-                          type="checkbox"
-                          checked={Boolean(chosen)}
-                          onChange={(ev) =>
-                            pickMatch(
-                              credit.credit_id,
-                              ev.target.checked ? best?.line_key || '' : ''
-                            )
-                          }
-                          disabled={!best}
-                          className="size-4"
-                        />
-                      )}
-                    </td>
-                    <td className="px-2 py-2 max-w-xs">
-                      <p className="tabular-nums">
-                        {credit.stmt_date} · {formatInrPaise(credit.amount_paise)}
-                      </p>
-                      <p className="text-label-sm text-on-surface-variant break-all mt-1">
-                        {credit.particulars.length > 120
-                          ? `${credit.particulars.slice(0, 120)}…`
-                          : credit.particulars}
-                      </p>
-                      {credit.rrn ? (
-                        <p className="text-label-sm mt-1">RRN {credit.rrn}</p>
-                      ) : null}
-                      {credit.payer_name ? (
-                        <p className="text-label-sm">{credit.payer_name}</p>
-                      ) : null}
-                    </td>
-                    <td className="px-2 py-2">
-                      {isGateway ? (
-                        <p className="text-label-sm text-on-surface-variant">Gateway / bulk — skip</p>
-                      ) : !candidates.length ? (
-                        <p className="text-label-sm text-on-surface-variant">No open line at this amount</p>
-                      ) : (
-                        <select
-                          className="w-full max-w-md rounded-lg border border-primary/15 px-2 py-1.5 text-body-sm bg-surface-ivory"
-                          value={chosen}
-                          onChange={(ev) => pickMatch(credit.credit_id, ev.target.value)}
-                        >
-                          <option value="">— Pick registration —</option>
-                          {candidates.map((c) => (
-                            <option key={c.line_key} value={c.line_key}>
-                              [{c.tier}] {c.payer_name} · {formatInrPaise(c.due_paise)}
-                              {c.phone ? ` · ${c.phone}` : ''} — {c.reasons.join(', ')}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <button
-            type="button"
-            disabled={busy || selected.size < 1}
-            onClick={() => void applySelected()}
-            className="rounded-lg bg-secondary-container text-on-secondary-container px-4 py-2.5 text-label-sm font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
-          >
-            Apply selected ({selected.size})
-          </button>
-        </div>
+      {step === 'review' ? (
+        <>
+          <div className="rounded-xl border border-jubilee-gold-light bg-secondary-container/30 p-4 text-body-sm">
+            <p>
+              Auto-matched <strong>{autoCount}</strong> deposit(s)
+              {accountNumber ? (
+                <>
+                  {' '}
+                  on account <span className="tabular-nums">{accountNumber}</span>
+                </>
+              ) : null}
+              . Selected for approval: <strong>{approvedCount}</strong>.
+            </p>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto">
+            <table className="w-full text-left text-body-sm border border-outline-variant rounded-xl overflow-hidden">
+              <thead className="bg-surface-container text-label-sm text-on-surface-variant sticky top-0">
+                <tr>
+                  <th className="px-2 py-2">Include</th>
+                  <th className="px-2 py-2">Bank credit</th>
+                  <th className="px-2 py-2">Registration match</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const { credit, candidates, best } = row;
+                  const isGateway = credit.kind === 'gateway';
+                  const chosen = selected.get(credit.credit_id) || '';
+                  return (
+                    <tr key={credit.credit_id} className="border-t border-outline-variant/60 align-top">
+                      <td className="px-2 py-2">
+                        {isGateway ? (
+                          <span className="text-label-sm text-on-surface-variant">Skip</span>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            aria-label="Include in approval"
+                            checked={Boolean(chosen)}
+                            onChange={(ev) =>
+                              pickMatch(
+                                credit.credit_id,
+                                ev.target.checked ? best?.line_key || chosen || '' : ''
+                              )
+                            }
+                            disabled={!candidates.length}
+                            className="size-4 cursor-pointer"
+                          />
+                        )}
+                      </td>
+                      <td className="px-2 py-2 max-w-xs">
+                        <p className="tabular-nums">
+                          {credit.stmt_date} · {formatInrPaise(credit.amount_paise)}
+                        </p>
+                        <p className="text-label-sm text-on-surface-variant break-all mt-1">
+                          {credit.particulars.length > 120
+                            ? `${credit.particulars.slice(0, 120)}…`
+                            : credit.particulars}
+                        </p>
+                        {credit.rrn ? (
+                          <p className="text-label-sm mt-1 tabular-nums">RRN {credit.rrn}</p>
+                        ) : null}
+                        {credit.payer_name ? (
+                          <p className="text-label-sm">{credit.payer_name}</p>
+                        ) : null}
+                      </td>
+                      <td className="px-2 py-2">
+                        {isGateway ? (
+                          <p className="text-label-sm text-on-surface-variant">Gateway / bulk</p>
+                        ) : !candidates.length ? (
+                          <p className="text-label-sm text-on-surface-variant">No open line at this amount</p>
+                        ) : (
+                          <select
+                            className="w-full max-w-md rounded-lg border border-primary/15 px-2 py-1.5 text-body-sm bg-surface-ivory"
+                            value={chosen}
+                            onChange={(ev) => pickMatch(credit.credit_id, ev.target.value)}
+                          >
+                            <option value="">— None —</option>
+                            {candidates.map((c) => (
+                              <option key={c.line_key} value={c.line_key}>
+                                [{c.tier}] {c.payer_name} · {formatInrPaise(c.due_paise)}
+                                {c.phone ? ` · ${c.phone}` : ''} — {c.reasons.join(', ')}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap gap-2 border-t border-outline-variant pt-4 sticky bottom-0 bg-surface-paper">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={backToUpload}
+              className="rounded-lg border border-outline-variant px-4 py-2.5 text-label-sm font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy || approvedCount < 1}
+              onClick={() => void approveReconciliation()}
+              className="rounded-lg bg-primary text-on-primary px-4 py-2.5 text-label-sm font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+            >
+              {busy ? 'Approving…' : `Approve reconciliation (${approvedCount})`}
+            </button>
+          </div>
+        </>
       ) : null}
     </ModalOverlay>
   );

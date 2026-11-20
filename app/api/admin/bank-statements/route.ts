@@ -5,6 +5,7 @@ import {
 } from '@/lib/admin/sib-statement-pdf';
 import { parseSibStatementCredits } from '@/lib/admin/sib-statement-parse';
 import { matchStatementCredits } from '@/lib/admin/bank-statement-match';
+import { isBankStatementReconcileEnabled } from '@/lib/admin/bank-statement-feature';
 import { requireVerifiedAdmin } from '@/lib/auth/admin-guard';
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,16 @@ const MAX_BYTES = 8_000_000;
 export async function POST(request: Request) {
   const me = await requireVerifiedAdmin();
   if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
+  if (!(await isBankStatementReconcileEnabled())) {
+    return NextResponse.json(
+      {
+        error:
+          'Bank statement reconciliation is turned off (admin toggle or BANK_STATEMENT_RECONCILE_ENABLED env). Re-enable on Receivables when ready.',
+      },
+      { status: 403 }
+    );
+  }
 
   const form = await request.formData().catch(() => null);
   if (!form) {

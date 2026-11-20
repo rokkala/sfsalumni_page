@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { parseReceivableLineKey } from '@/lib/admin/receivable-lines';
 import { decideOfflineProof } from '@/lib/admin/decide-offline-proof';
+import { isBankStatementReconcileEnabled } from '@/lib/admin/bank-statement-feature';
 import { requireVerifiedAdmin } from '@/lib/auth/admin-guard';
 import { applyDonationPayment } from '@/lib/donations/mark-paid';
 import {
@@ -26,6 +27,13 @@ async function donationLinkedToRegistration(donationId: string): Promise<boolean
 export async function POST(request: Request) {
   const me = await requireVerifiedAdmin();
   if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
+  if (!(await isBankStatementReconcileEnabled())) {
+    return NextResponse.json(
+      { error: 'Bank statement reconciliation is turned off.' },
+      { status: 403 }
+    );
+  }
 
   const body = await request.json().catch(() => ({}));
   const rows = Array.isArray(body.rows) ? (body.rows as ApplyRow[]) : [];

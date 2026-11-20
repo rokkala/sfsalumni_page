@@ -30,6 +30,17 @@ export default function AdminReceivablesPage() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [statementOpen, setStatementOpen] = useState(false);
+  const [bankStatementOn, setBankStatementOn] = useState(true);
+  const [bankStatementEnvKill, setBankStatementEnvKill] = useState(false);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+
+  const loadCheckoutFlags = useCallback(async () => {
+    const res = await fetch('/api/admin/payment-checkout-settings', { cache: 'no-store' });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) return;
+    setBankStatementOn(Boolean(payload.bank_statement_reconcile_enabled));
+    setBankStatementEnvKill(Boolean(payload.bank_statement_killed_by_env));
+  }, []);
 
   const load = useCallback(async (opts?: { silentCashfreeMessage?: boolean }) => {
     const params = new URLSearchParams();
@@ -55,7 +66,34 @@ export default function AdminReceivablesPage() {
       .then((r) => r.json())
       .then((p) => setEvents(p.events || []))
       .catch(() => undefined);
-  }, []);
+    void loadCheckoutFlags();
+  }, [loadCheckoutFlags]);
+
+  async function toggleBankStatement(checked: boolean) {
+    setSettingsBusy(true);
+    setMessage('');
+    try {
+      const res = await fetch('/api/admin/payment-checkout-settings', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bank_statement_reconcile_enabled: checked }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMessage(payload.error || 'Could not save setting');
+        return;
+      }
+      setBankStatementOn(Boolean(payload.bank_statement_reconcile_enabled));
+      setBankStatementEnvKill(Boolean(payload.bank_statement_killed_by_env));
+      setMessage(
+        checked
+          ? 'Bank statement upload enabled.'
+          : 'Bank statement upload disabled — instant rollback for testing.'
+      );
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
 
   useEffect(() => {
     setError('');
@@ -142,7 +180,8 @@ export default function AdminReceivablesPage() {
         donations. <strong className="font-semibold text-on-surface">Cashfree</strong> lines with an order id are
         polled on each refresh and marked paid when the PG shows PAID (webhook backstop).{' '}
         <strong className="font-semibold text-on-surface">Approve proof &amp; mark paid</strong> is for Bank / UPI.
-        Use <strong className="font-semibold text-on-surface">Upload statement</strong> to match SIB PDF deposits.
+        Use <strong className="font-semibold text-on-surface">Upload statement</strong> for auto-recon preview — approve
+        only when matches look right.
       </p>
 
       {error ? (
@@ -166,14 +205,36 @@ export default function AdminReceivablesPage() {
         </span>
       </div>
 
-      <div className="mb-4">
-        <button
-          type="button"
-          onClick={() => setStatementOpen(true)}
-          className="rounded-lg border border-primary/25 bg-surface-ivory px-4 py-2.5 text-label-sm font-semibold text-primary cursor-pointer hover:bg-surface-container"
-        >
-          Upload bank statement
-        </button>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <label className="flex items-center gap-2 text-body-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={bankStatementOn}
+            disabled={settingsBusy || bankStatementEnvKill}
+            onChange={(e) => void toggleBankStatement(e.target.checked)}
+            className="size-4"
+          />
+          Bank statement upload &amp; match
+        </label>
+        {bankStatementOn && !bankStatementEnvKill ? (
+          <button
+            type="button"
+            onClick={() => setStatementOpen(true)}
+            className="rounded-lg border border-primary/25 bg-surface-ivory px-4 py-2.5 text-label-sm font-semibold text-primary cursor-pointer hover:bg-surface-container"
+          >
+            Upload bank statement
+          </button>
+        ) : null}
+        {bankStatementEnvKill ? (
+          <p className="text-label-sm text-on-surface-variant">
+            Disabled by Vercel env <code className="text-label-sm">BANK_STATEMENT_RECONCILE_ENABLED</code> —
+            remove or set to true, redeploy to re-enable.
+          </p>
+        ) : null}
+        <p className="text-label-sm text-on-surface-variant sm:w-full">
+          Roll back the app build with{' '}
+          <code className="text-label-sm">npm run deploy:rollback</code> (see docs/DEPLOY_ROLLBACK.md).
+        </p>
       </div>
 
       <div className="flex flex-col md:flex-row gap-3 mb-5">

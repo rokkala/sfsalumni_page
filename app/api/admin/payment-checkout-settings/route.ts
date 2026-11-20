@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { requireVerifiedAdmin } from '@/lib/auth/admin-guard';
+import { bankStatementKilledByEnv } from '@/lib/admin/bank-statement-feature';
 import { isCashfreeConfigured } from '@/lib/payments/cashfree';
 import {
   loadCheckoutSettings,
+  setBankStatementReconcileEnabled,
   setCheckoutSettingsEnabled,
 } from '@/lib/payments/checkout-settings';
 
@@ -13,8 +15,13 @@ export async function GET() {
   if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const settings = await loadCheckoutSettings();
+  const env_kills_bank_statement = bankStatementKilledByEnv();
   return NextResponse.json({
     online_checkout_enabled: settings.online_checkout_enabled,
+    bank_statement_reconcile_enabled: env_kills_bank_statement
+      ? false
+      : settings.bank_statement_reconcile_enabled,
+    bank_statement_killed_by_env: env_kills_bank_statement,
     cashfree_configured: isCashfreeConfigured(),
   });
 }
@@ -24,14 +31,19 @@ export async function PATCH(request: Request) {
   if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const body = await request.json().catch(() => ({}));
-  if (typeof body.online_checkout_enabled !== 'boolean') {
+  const patchOnline = typeof body.online_checkout_enabled === 'boolean';
+  const patchBank = typeof body.bank_statement_reconcile_enabled === 'boolean';
+  if (!patchOnline && !patchBank) {
     return NextResponse.json(
-      { error: 'online_checkout_enabled must be a boolean' },
+      {
+        error:
+          'Send online_checkout_enabled and/or bank_statement_reconcile_enabled (boolean).',
+      },
       { status: 400 }
     );
   }
 
-  if (body.online_checkout_enabled && !isCashfreeConfigured()) {
+  if (patchOnline && body.online_checkout_enabled && !isCashfreeConfigured()) {
     return NextResponse.json(
       {
         error:
@@ -41,14 +53,30 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const saved = await setCheckoutSettingsEnabled(body.online_checkout_enabled);
-  if (!saved.ok) {
-    return NextResponse.json({ error: saved.error }, { status: 500 });
+  if (patchOnline) {
+    const saved = await setCheckoutSettingsEnabled(body.online_checkout_enabled);
+    if (!saved.ok) {
+      return NextResponse.json({ error: saved.error }, { status: 500 });
+    }
   }
+
+  if (patchBank) {
+    const saved = await setBankStatementReconcileEnabled(body.bank_statement_reconcile_enabled);
+    if (!saved.ok) {
+      return NextResponse.json({ error: saved.error }, { status: 500 });
+    }
+  }
+
+  const settings = await loadCheckoutSettings();
+  const env_kills_bank_statement = bankStatementKilledByEnv();
 
   return NextResponse.json({
     ok: true,
-    online_checkout_enabled: body.online_checkout_enabled,
+    online_checkout_enabled: settings.online_checkout_enabled,
+    bank_statement_reconcile_enabled: env_kills_bank_statement
+      ? false
+      : settings.bank_statement_reconcile_enabled,
+    bank_statement_killed_by_env: env_kills_bank_statement,
     cashfree_configured: isCashfreeConfigured(),
   });
 }

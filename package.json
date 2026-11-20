@@ -8,7 +8,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "deploy:prod": "vercel deploy --prod --yes",
+    "deploy:rollback": "vercel rollback --yes",
+    "deploy:list": "vercel ls --prod"
   },
   "dependencies": {
     "@supabase/auth-helpers-nextjs": "^0.8.0",
