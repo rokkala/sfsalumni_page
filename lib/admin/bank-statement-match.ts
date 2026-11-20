@@ -74,8 +74,14 @@ function receiptMatchesLine(
       return `Receipt ref matches narration on file`;
     }
   }
-  if (credit.rrn && proof && credit.rrn === proof) {
-    return `RRN matches proof UTR`;
+  if (credit.rrn) {
+    const r = normalizeUpiRefNoInput(credit.rrn);
+    if (r.length >= 10 && bankRef && r === bankRef) {
+      return `RRN ${r} matches bank reference`;
+    }
+    if (credit.rrn && proof && credit.rrn === proof) {
+      return `RRN matches proof UTR`;
+    }
   }
   return null;
 }
@@ -212,6 +218,31 @@ function scoreLine(
   };
 }
 
+async function registrationIdsForPaymentRefs(refs: string[]): Promise<string[]> {
+  const digits = [...new Set(refs.map(normalizeUpiRefNoInput).filter((r) => r.length >= 10))];
+  if (!digits.length) return [];
+  const admin = createAdminClient();
+  const ids = new Set<string>();
+  const { data: proofs } = await admin
+    .from('offline_payment_proofs')
+    .select('registration_id,utr')
+    .in('utr', digits)
+    .not('registration_id', 'is', null);
+  for (const p of proofs || []) {
+    const u = normalizeUpiRefNoInput(p.utr);
+    if (digits.includes(u) && p.registration_id) ids.add(String(p.registration_id));
+  }
+  const { data: regs } = await admin
+    .from('event_registrations')
+    .select('id,bank_reference')
+    .not('bank_reference', 'is', null);
+  for (const r of regs || []) {
+    const u = normalizeUpiRefNoInput(r.bank_reference);
+    if (digits.includes(u)) ids.add(String(r.id));
+  }
+  return [...ids];
+}
+
 async function buildLineContexts(lines: ReceivableLine[]): Promise<LineContext[]> {
   const regIds = [...new Set(lines.map((l) => l.registration_id).filter(Boolean) as string[])];
   const proofIds = [...new Set(lines.map((l) => l.proof_id).filter(Boolean) as string[])];
@@ -220,6 +251,7 @@ async function buildLineContexts(lines: ReceivableLine[]): Promise<LineContext[]
   const phoneMap = new Map<string, string | null>();
   const codeMap = new Map<string, string | null>();
   const proofUtrMap = new Map<string, string | null>();
+  const proofUtrByReg = new Map<string, string | null>();
 
   if (regIds.length) {
     const { data } = await admin
@@ -245,11 +277,31 @@ async function buildLineContexts(lines: ReceivableLine[]): Promise<LineContext[]
     }
   }
 
+  if (regIds.length) {
+    const { data: regProofs } = await admin
+      .from('offline_payment_proofs')
+      .select('registration_id,utr,status,created_at')
+      .in('registration_id', regIds)
+      .not('utr', 'is', null)
+      .order('created_at', { ascending: false });
+    for (const p of regProofs || []) {
+      const rid = String(p.registration_id || '');
+      if (!rid || proofUtrByReg.has(rid)) continue;
+      if (p.status === 'pending' || p.status === 'approved') {
+        proofUtrByReg.set(rid, p.utr ? String(p.utr) : null);
+      }
+    }
+  }
+
   return lines.map((line) => ({
     line,
     phone: line.registration_id ? phoneMap.get(line.registration_id) ?? null : null,
     registration_code: line.registration_id ? codeMap.get(line.registration_id) ?? null : null,
-    proof_utr: line.proof_id ? proofUtrMap.get(line.proof_id) ?? null : null,
+    proof_utr: line.proof_id
+      ? proofUtrMap.get(line.proof_id) ?? null
+      : line.registration_id
+        ? proofUtrByReg.get(line.registration_id) ?? null
+        : null,
   }));
 }
 
@@ -277,13 +329,40 @@ export async function matchStatementCredits(input: {
   includeClosedLines?: boolean;
 }): Promise<{ results: BankStatementCreditResult[]; error: string | null }> {
   const includeClosed = Boolean(input.includeClosedLines);
-  const { lines, error } = await loadReceivableLines({
+  const { lines: baseLines, error } = await loadReceivableLines({
     eventId: input.eventId,
     status: includeClosed ? 'all' : 'open',
   });
   if (error) return { results: [], error };
 
+  const stmtRefs = [
+    ...new Set(
+      input.credits.flatMap((c) =>
+        [...(c.receipt_refs || []), ...(c.rrn ? [c.rrn] : [])].filter(Boolean)
+      )
+    ),
+  ];
+  const refRegIds = await registrationIdsForPaymentRefs(stmtRefs);
+  let lines = baseLines;
+  const covered = new Set(baseLines.map((l) => l.registration_id).filter(Boolean));
+  const missingRefRegs = refRegIds.filter((id) => !covered.has(id));
+  if (missingRefRegs.length) {
+    const { lines: allLines, error: allErr } = await loadReceivableLines({
+      status: 'all',
+    });
+    if (!allErr) {
+      const extra = allLines.filter(
+        (l) => l.registration_id && missingRefRegs.includes(l.registration_id)
+      );
+      const seen = new Set(lines.map((l) => l.line_key));
+      for (const row of extra) {
+        if (!seen.has(row.line_key)) lines.push(row);
+      }
+    }
+  }
+
   const contexts = await buildLineContexts(lines);
+  const utrPinnedRegIds = new Set(refRegIds);
   const results: BankStatementCreditResult[] = [];
 
   for (const credit of input.credits) {
@@ -294,7 +373,10 @@ export async function matchStatementCredits(input: {
 
     const candidates: BankStatementCandidate[] = [];
     for (const ctx of contexts) {
-      const scored = scoreLine(credit, ctx, includeClosed);
+      const allowClosed =
+        includeClosed ||
+        Boolean(ctx.line.registration_id && utrPinnedRegIds.has(ctx.line.registration_id));
+      const scored = scoreLine(credit, ctx, allowClosed);
       if (scored) candidates.push(scored);
     }
 

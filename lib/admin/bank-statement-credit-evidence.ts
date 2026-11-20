@@ -23,13 +23,20 @@ export function isBankRailPayerLabel(name: string | null | undefined): boolean {
 export function creditEvidenceItems(credit: SibStatementCredit): CreditEvidenceItem[] {
   const items: CreditEvidenceItem[] = [];
   const head = credit.particulars.split('/')[0]?.trim();
+  const channel = head?.toUpperCase() || '';
   if (head) {
     items.push({ id: 'channel', label: 'Channel', value: head });
   }
+  const refLabel =
+    channel === 'UPI'
+      ? 'UPI RRN / receipt ref (match vs receivable Ref)'
+      : channel === 'IMPS'
+        ? 'IMPS transaction ref (match vs receivable Ref)'
+        : 'Receipt ref (match vs receivable Ref)';
   if (credit.receipt_refs.length) {
     items.push({
       id: 'refs',
-      label: 'Receipt / IMPS ref (match vs receivable Ref)',
+      label: refLabel,
       value: credit.receipt_refs.join(', '),
     });
   }

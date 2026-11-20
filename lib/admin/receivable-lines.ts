@@ -183,12 +183,26 @@ export async function loadReceivableLines(filters: {
       .select('id,registration_id,utr,status,created_at')
       .in('registration_id', registrationIds)
       .order('created_at', { ascending: false });
+    const proofsByReg = new Map<
+      string,
+      { id: string; registration_id: string; utr: string | null; status: string; created_at: string }[]
+    >();
     for (const p of regProofs || []) {
       const rid = String(p.registration_id || '');
-      if (!rid || proofByReg.has(rid)) continue;
-      if (p.status === 'pending') {
-        proofByReg.set(rid, { utr: p.utr ?? null, proof_id: p.id });
-      }
+      if (!rid) continue;
+      if (!proofsByReg.has(rid)) proofsByReg.set(rid, []);
+      proofsByReg.get(rid)!.push(p);
+    }
+    for (const [rid, proofs] of proofsByReg) {
+      const pending = proofs.filter((p) => p.status === 'pending');
+      const pick =
+        pending[0] ||
+        proofs.find((p) => p.status === 'approved' && String(p.utr || '').trim());
+      if (!pick) continue;
+      proofByReg.set(rid, {
+        utr: pick.utr ?? null,
+        proof_id: pick.status === 'pending' ? pick.id : null,
+      });
     }
   }
 

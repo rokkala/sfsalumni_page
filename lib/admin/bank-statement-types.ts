@@ -31,9 +31,18 @@ export type BankStatementCreditResult = {
 export function autoSelectLineKeys(results: BankStatementCreditResult[]): Map<string, string> {
   const next = new Map<string, string>();
   for (const r of results) {
-    if (r.credit.kind !== 'credit' || !r.best || r.best.closed_line) continue;
-    if (r.best.tier === 'high' || (r.best.tier === 'medium' && r.best.match_score >= 65)) {
-      next.set(r.credit.credit_id, r.best.line_key);
+    if (r.credit.kind !== 'credit') continue;
+    const pick =
+      r.best && !r.best.closed_line
+        ? r.best
+        : r.candidates.find((c) => !c.closed_line && c.match_score >= 50) ?? r.candidates[0];
+    if (!pick || pick.closed_line) continue;
+    if (
+      pick.tier === 'high' ||
+      (pick.tier === 'medium' && pick.match_score >= 65) ||
+      (r.candidates.length === 1 && pick.match_score >= 50)
+    ) {
+      next.set(r.credit.credit_id, pick.line_key);
     }
   }
   return next;
