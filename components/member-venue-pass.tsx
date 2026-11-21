@@ -13,7 +13,6 @@ import { clampGuestCount, formatCostForDisplay } from '@/lib/registration/regist
 import { eventFeeNotApplicable } from '@/lib/events/venue-attendance';
 import { registrationPath } from '@/lib/events/choose-event';
 import { venuePassSummary } from '@/lib/events/venue-pass';
-import type { EventCatalog } from '@/lib/events/types';
 import { passStatusBadge, venuePassPaymentCue, type VenuePassState } from '@/lib/payments/offline-proof';
 
 /** One saved registration as GET /api/registration/event returns it. */
@@ -44,10 +43,16 @@ type Loaded = {
   registration: Registration;
 };
 
-type MeResponse = { role?: string };
-
-type RegistrationEventResponse = {
-  registration?: Registration | null;
+type VenuePassesResponse = {
+  hideVenuePass?: boolean;
+  passes?: Array<{
+    eventId: string;
+    eventTitle: string;
+    starts_at: string;
+    ends_at: string | null;
+    venue: string;
+    registration: Registration;
+  }>;
   profile?: { full_name?: string | null } | null;
 };
 
@@ -73,48 +78,31 @@ export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pa
     let active = true;
     (async () => {
       try {
-        const meRes = await fetch('/api/auth/me', { cache: 'no-store' });
+        const res = await fetch('/api/registration/venue-passes', { cache: 'no-store' });
         if (!active) return;
-        if (!meRes.ok) {
+        if (res.status === 401) {
           setPhase('hidden');
           return;
         }
-        const me = (await meRes.json()) as MeResponse;
-        if (me.role === 'admin') {
+        if (!res.ok) {
           setPhase('hidden');
           return;
         }
-        const listRes = await fetch('/api/events', { cache: 'no-store' });
-        if (!listRes.ok || !active) {
+        const payload = (await res.json()) as VenuePassesResponse;
+        if (payload.hideVenuePass) {
           setPhase('hidden');
           return;
         }
-        const list = (await listRes.json()) as EventCatalog[];
-        if (!Array.isArray(list)) {
-          setPhase('hidden');
-          return;
-        }
-        const loaded: Loaded[] = [];
-        for (const event of list) {
-          const regRes = await fetch(`/api/registration/event?eventId=${encodeURIComponent(event.id)}`, {
-            cache: 'no-store',
-          });
-          if (regRes.status === 401) {
-            if (active) setPhase('hidden');
-            return;
-          }
-          if (!regRes.ok || !active) continue;
-          const payload = (await regRes.json()) as RegistrationEventResponse;
-          if (!payload.registration) continue;
-          loaded.push({
-            eventId: event.id,
-            eventTitle: event.title,
-            when: whenLabel(event.starts_at, event.ends_at),
-            venue: event.venue || '',
-            name: String(payload.profile?.full_name || ''),
-            registration: payload.registration,
-          });
-        }
+        const rows = Array.isArray(payload.passes) ? payload.passes : [];
+        const name = String(payload.profile?.full_name || '');
+        const loaded: Loaded[] = rows.map((row) => ({
+          eventId: row.eventId,
+          eventTitle: row.eventTitle,
+          when: whenLabel(row.starts_at, row.ends_at),
+          venue: row.venue || '',
+          name,
+          registration: row.registration,
+        }));
         if (!active) return;
         setPasses(loaded);
         setPhase(loaded.length ? 'ready' : 'empty');

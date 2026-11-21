@@ -103,6 +103,52 @@ function profilePayload(me: AlumniAccount) {
   };
 }
 
+async function loadAccountProfile(
+  admin: AdminClient,
+  me: AlumniAccount
+): Promise<Record<string, unknown>> {
+  let profile: Record<string, unknown> = profilePayload(me);
+  const fullProfile = await admin
+    .from('alumni_accounts')
+    .select('full_name,last_name,email,phone_number,batch,section,current_location,bio')
+    .eq('id', me.id)
+    .maybeSingle();
+  if (!fullProfile.error && fullProfile.data) {
+    const row = fullProfile.data as Record<string, unknown>;
+    const packed = readPackedProfile(row.bio);
+    profile = {
+      ...profile,
+      ...row,
+      section: row.section || packed?.section || profile.section || null,
+      last_name: row.last_name || packed?.lastName || profile.last_name || null,
+    };
+    return profile;
+  }
+  const minProfile = await admin
+    .from('alumni_accounts')
+    .select('full_name,email,phone_number,batch,current_location,bio')
+    .eq('id', me.id)
+    .maybeSingle();
+  if (!minProfile.error && minProfile.data) {
+    const row = minProfile.data as Record<string, unknown>;
+    const packed = readPackedProfile(row.bio);
+    profile = {
+      ...profile,
+      ...row,
+      section: packed?.section || profile.section || null,
+      last_name: packed?.lastName || profile.last_name || null,
+    };
+  }
+  return profile;
+}
+
+type GetAccountRegistrationOpts = {
+  /** Caller already ran repriceEventRegistrations for this event. */
+  skipReprice?: boolean;
+  /** Reuse profile from a prior load (venue-pass batch). */
+  profile?: Record<string, unknown>;
+};
+
 /**
  * Brings the donation row in line with the intended amount.
  * - A paid donation cannot be changed here. The committee handles it.
@@ -179,7 +225,8 @@ async function syncDonationIntent(
 
 export async function getAccountRegistrationForEvent(
   me: AlumniAccount,
-  eventId: string
+  eventId: string,
+  opts?: GetAccountRegistrationOpts
 ): Promise<{ status: number; payload: Record<string, unknown> }> {
   const id = String(eventId || '').trim();
   if (!id) return { status: 400, payload: { error: 'eventId is required' } };
@@ -204,7 +251,7 @@ export async function getAccountRegistrationForEvent(
   }
 
   let registrationRow = data;
-  if (data) {
+  if (data && !opts?.skipReprice) {
     await repriceEventRegistrations(id);
     const refreshed = await admin
       .from('event_registrations')
@@ -216,40 +263,8 @@ export async function getAccountRegistrationForEvent(
     if (!refreshed.error && refreshed.data) registrationRow = refreshed.data;
   }
 
-  // Start from the session account, then overlay the database row. Packed bio fields fill in
-  // section and last name when the columns are not present yet.
-  let profile: Record<string, unknown> = profilePayload(me);
-  const fullProfile = await admin
-    .from('alumni_accounts')
-    .select('full_name,last_name,email,phone_number,batch,section,current_location,bio')
-    .eq('id', me.id)
-    .maybeSingle();
-  if (!fullProfile.error && fullProfile.data) {
-    const row = fullProfile.data as Record<string, unknown>;
-    const packed = readPackedProfile(row.bio);
-    profile = {
-      ...profile,
-      ...row,
-      section: row.section || packed?.section || profile.section || null,
-      last_name: row.last_name || packed?.lastName || profile.last_name || null,
-    };
-  } else {
-    const minProfile = await admin
-      .from('alumni_accounts')
-      .select('full_name,email,phone_number,batch,current_location,bio')
-      .eq('id', me.id)
-      .maybeSingle();
-    if (!minProfile.error && minProfile.data) {
-      const row = minProfile.data as Record<string, unknown>;
-      const packed = readPackedProfile(row.bio);
-      profile = {
-        ...profile,
-        ...row,
-        section: packed?.section || profile.section || null,
-        last_name: packed?.lastName || profile.last_name || null,
-      };
-    }
-  }
+  const profile =
+    opts?.profile ?? (await loadAccountProfile(admin, me));
 
   const reg = registrationRow as RegistrationRow | null;
   if (!reg) return { status: 200, payload: { registration: null, profile } };
@@ -358,6 +373,105 @@ export async function getAccountRegistrationForEvent(
       profile,
     },
   };
+}
+
+export type VenuePassListItem = {
+  eventId: string;
+  eventTitle: string;
+  starts_at: string;
+  ends_at: string | null;
+  venue: string;
+  registration: Record<string, unknown>;
+};
+
+/** One round-trip for member entry passes: only events this account has open registrations for. */
+export async function listAccountVenuePasses(
+  me: AlumniAccount
+): Promise<{
+  status: number;
+  payload: {
+    passes: VenuePassListItem[];
+    profile: Record<string, unknown>;
+    hideVenuePass?: boolean;
+  };
+}> {
+  if (me.role === 'admin') {
+    return {
+      status: 200,
+      payload: { passes: [], profile: profilePayload(me), hideVenuePass: true },
+    };
+  }
+
+  const admin = createAdminClient();
+  const { data: regIndex, error: indexError } = await admin
+    .from('event_registrations')
+    .select('event_id')
+    .eq('account_id', me.id)
+    .in('payment_status', [...OPEN_PAYMENT_STATUSES]);
+
+  if (indexError) {
+    console.error('venue pass list', indexError);
+    return {
+      status: 500,
+      payload: {
+        passes: [],
+        profile: profilePayload(me),
+      },
+    };
+  }
+
+  const eventIds = [
+    ...new Set(
+      (regIndex || [])
+        .map((row) => String((row as { event_id?: string }).event_id || '').trim())
+        .filter(Boolean)
+    ),
+  ];
+
+  const profile = await loadAccountProfile(admin, me);
+  if (!eventIds.length) {
+    return { status: 200, payload: { passes: [], profile } };
+  }
+
+  await Promise.all(eventIds.map((eventId) => repriceEventRegistrations(eventId)));
+
+  const { data: eventRows, error: eventError } = await selectCatalog((columns) =>
+    admin.from('event_catalog').select(columns).in('id', eventIds)
+  );
+  if (eventError) {
+    console.error('venue pass events', eventError);
+    return { status: 500, payload: { passes: [], profile } };
+  }
+
+  const eventById = new Map<string, EventCatalog>();
+  for (const row of (eventRows || []) as unknown as EventCatalog[]) {
+    if (row?.id) eventById.set(String(row.id), row);
+  }
+
+  const detailResults = await Promise.all(
+    eventIds.map((eventId) => getAccountRegistrationForEvent(me, eventId, { skipReprice: true, profile }))
+  );
+
+  const passes: VenuePassListItem[] = [];
+  for (let i = 0; i < eventIds.length; i++) {
+    const eventId = eventIds[i];
+    const detail = detailResults[i];
+    const reg = detail.payload.registration as Record<string, unknown> | null | undefined;
+    if (detail.status !== 200 || !reg) continue;
+    const catalog = eventById.get(eventId);
+    passes.push({
+      eventId,
+      eventTitle: catalog?.title || 'Event',
+      starts_at: catalog?.starts_at || '',
+      ends_at: catalog?.ends_at ?? null,
+      venue: catalog?.venue || '',
+      registration: reg,
+    });
+  }
+
+  passes.sort((a, b) => String(a.starts_at).localeCompare(String(b.starts_at)));
+
+  return { status: 200, payload: { passes, profile } };
 }
 
 export async function registerAccountForEvent(
