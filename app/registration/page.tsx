@@ -45,7 +45,11 @@ import {
     type RegistrationFormMode,
 } from '@/components/registration_page/registration-form';
 import { RegistrationSuccess } from '@/components/registration_page/registration-success';
-import { effectivePendingProofAmountPaise, previewMoney } from '@/lib/registration/preview';
+import {
+    effectivePendingProofAmountPaise,
+    previewMoney,
+    savedFeeTreatedAsCovered,
+} from '@/lib/registration/preview';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
 import {
     CASHFREE_CHECKOUT_CANCELLED,
@@ -1021,11 +1025,14 @@ function RegistrationPageInner() {
         verificationPending ||
         money.passState === 'pending_verification' ||
         money.paymentStatus === 'partial' ||
-        money.feePaidPaise > 0;
+        money.feePaidPaise > 0 ||
+        (formDirty && savedFeeTreatedAsCovered(money));
     const pendingProofAmountPaise = effectivePendingProofAmountPaise(
         money,
         pendingProof?.amountPaise,
-        Boolean(pendingProof)
+        Boolean(pendingProof) ||
+            money.passState === 'pending_verification' ||
+            savedFeeTreatedAsCovered(money)
     );
     // Shown amounts: the database figures until the form is edited, then a live preview.
     const displayMoney = formDirty

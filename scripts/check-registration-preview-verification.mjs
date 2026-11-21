@@ -83,4 +83,30 @@ assert(
   'incremental due from partial proof'
 );
 
+function savedFeeTreatedAsCovered(saved) {
+  return (
+    saved.feeTotal > 0 &&
+    saved.feeDue === 0 &&
+    saved.paymentStatus !== 'paid' &&
+    (saved.passState === 'pending_verification' || saved.totalDue === 0)
+  );
+}
+
+assert(
+  savedFeeTreatedAsCovered({
+    feeTotal: 100_000,
+    feeDue: 0,
+    totalDue: 0,
+    paymentStatus: 'pending',
+    passState: 'payment_required',
+  }),
+  'fee due 0 on saved row means fee in flight'
+);
+
+const coveredInFlight = creditedFeePaidPaise(100_000, 0, 200_000, 0);
+assert(
+  Math.max(0, 200_000 - coveredInFlight) === 100_000,
+  'in-flight saved fee credits one guest add'
+);
+
 console.log('OK registration preview verification differential');

@@ -23,7 +23,8 @@ export function effectivePendingProofAmountPaise(
 ): number {
     const stored = Math.max(0, Math.floor(Number(pendingProofAmountPaise) || 0));
     if (stored > 0) return stored;
-    if (!hasPendingProof && saved.passState !== 'pending_verification') return 0;
+    const inFlight = hasPendingProof || saved.passState === 'pending_verification' || savedFeeTreatedAsCovered(saved);
+    if (!inFlight) return 0;
     const donationPending =
         saved.donationPaymentStatus !== 'paid' && saved.donationPaymentStatus !== 'failed';
     const donationPart = donationPending ? Math.max(0, saved.donationIntendedPaise) : 0;
@@ -40,6 +41,16 @@ export type PreviewMoneyOptions = {
     pendingProofAmountPaise?: number;
 };
 
+/** Saved row shows fee covered (e.g. pending committee review) while fee total is still positive. */
+export function savedFeeTreatedAsCovered(saved: RegistrationMoney): boolean {
+    return (
+        saved.feeTotalPaise > 0 &&
+        saved.feeDuePaise === 0 &&
+        saved.paymentStatus !== 'paid' &&
+        (saved.passState === 'pending_verification' || saved.totalDuePaise === 0)
+    );
+}
+
 /** True when the saved registration already has money in flight — preview should show increments only. */
 export function shouldCreditSavedFeeInPreview(
     saved: RegistrationMoney,
@@ -48,7 +59,8 @@ export function shouldCreditSavedFeeInPreview(
     if (opts?.creditSavedRegistrationFee) return true;
     if (saved.passState === 'pending_verification') return true;
     if (saved.paymentStatus === 'partial') return true;
-    return saved.feePaidPaise > 0;
+    if (saved.feePaidPaise > 0) return true;
+    return savedFeeTreatedAsCovered(saved);
 }
 
 /**

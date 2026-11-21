@@ -10,6 +10,11 @@ import type { RegistrationMoney } from '@/lib/registration/types';
 
 type RefundEmail = ComponentProps<typeof RefundEmailCta>['refundEmail'];
 
+function feePaidBelowFullTotal(money: RegistrationMoney): boolean {
+  const fullPaise = money.feeTotalPaise + money.donationIntendedPaise;
+  return money.feePaidPaise > 0 && money.totalDuePaise < fullPaise;
+}
+
 export interface PaymentSummaryProps {
   /** Figures to show: saved amounts, or the live preview while the form has edits. */
   money: RegistrationMoney;
@@ -33,7 +38,12 @@ export function PaymentSummary({
   const totalPaise = money.feeTotalPaise + money.donationIntendedPaise;
   const alreadyPaidPaise = money.feePaidPaise + (donationPaid ? money.donationIntendedPaise : 0);
   const duePaise = money.totalDuePaise;
-  const showDueOnly = dueOnly && (alreadyPaidPaise > 0 || duePaise > 0);
+  const incrementalPreview =
+    isPreview &&
+    duePaise > 0 &&
+    (alreadyPaidPaise > 0 || feePaidBelowFullTotal(money));
+  const showDueOnly =
+    (dueOnly && (alreadyPaidPaise > 0 || duePaise > 0)) || incrementalPreview;
 
   return (
     <section className="bg-surface-container-low rounded-lg px-6 py-6 space-y-3">
