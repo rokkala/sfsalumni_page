@@ -3,6 +3,17 @@ import type { ReceivableLine } from '@/lib/admin/receivable-lines';
 
 export type BankStatementMatchTier = 'high' | 'medium' | 'low' | 'none';
 
+export type BankStatementProofSummary = {
+  id: string;
+  utr: string | null;
+  status: string;
+  amount_paise: number;
+  created_at: string;
+  remittance_method: string | null;
+  payment_date: string | null;
+  admin_note: string | null;
+};
+
 export type BankStatementCandidate = {
   line_key: string;
   kind: ReceivableLine['kind'];
@@ -20,6 +31,8 @@ export type BankStatementCandidate = {
   reasons: string[];
   /** Paid / no amount due — preview only when include-closed toggle is on. */
   closed_line: boolean;
+  /** Offline remittance proofs for this receivable line (newest first). */
+  proofs: BankStatementProofSummary[];
 };
 
 export type BankStatementCreditResult = {

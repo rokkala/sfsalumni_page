@@ -4,6 +4,7 @@ import type {
   BankStatementCandidate,
   BankStatementCreditResult,
   BankStatementMatchTier,
+  BankStatementProofSummary,
 } from '@/lib/admin/bank-statement-types';
 import { shortUpiPaymentRef, normalizeUpiRefNoInput } from '@/lib/payments/bank-details';
 import { nameMatchScore, type SibStatementCredit } from '@/lib/admin/sib-statement-parse';
@@ -20,6 +21,7 @@ type LineContext = {
   phone: string | null;
   registration_code: string | null;
   proof_utr: string | null;
+  proofs: BankStatementProofSummary[];
 };
 
 function digitsOnly(s: string): string {
@@ -215,6 +217,7 @@ function scoreLine(
     match_score: score,
     reasons,
     closed_line: closed,
+    proofs: ctx.proofs,
   };
 }
 
@@ -245,6 +248,7 @@ async function registrationIdsForPaymentRefs(refs: string[]): Promise<string[]> 
 
 async function buildLineContexts(lines: ReceivableLine[]): Promise<LineContext[]> {
   const regIds = [...new Set(lines.map((l) => l.registration_id).filter(Boolean) as string[])];
+  const donationIds = [...new Set(lines.map((l) => l.donation_id).filter(Boolean) as string[])];
   const proofIds = [...new Set(lines.map((l) => l.proof_id).filter(Boolean) as string[])];
 
   const admin = createAdminClient();
@@ -252,6 +256,66 @@ async function buildLineContexts(lines: ReceivableLine[]): Promise<LineContext[]
   const codeMap = new Map<string, string | null>();
   const proofUtrMap = new Map<string, string | null>();
   const proofUtrByReg = new Map<string, string | null>();
+  const proofsByReg = new Map<string, BankStatementProofSummary[]>();
+  const proofsByDon = new Map<string, BankStatementProofSummary[]>();
+
+  function pushProof(
+    map: Map<string, BankStatementProofSummary[]>,
+    key: string,
+    row: BankStatementProofSummary
+  ): void {
+    const list = map.get(key) || [];
+    if (list.some((p) => p.id === row.id)) return;
+    list.push(row);
+    map.set(key, list);
+  }
+
+  const proofSelect =
+    'id,registration_id,donation_id,utr,status,amount_paise,created_at,remittance_method,payment_date,admin_note';
+
+  if (regIds.length) {
+    const { data: regProofRows } = await admin
+      .from('offline_payment_proofs')
+      .select(proofSelect)
+      .in('registration_id', regIds)
+      .order('created_at', { ascending: false });
+    for (const row of regProofRows || []) {
+      const rid = String(row.registration_id || '');
+      if (!rid) continue;
+      pushProof(proofsByReg, rid, {
+        id: String(row.id),
+        utr: row.utr ? String(row.utr) : null,
+        status: String(row.status || ''),
+        amount_paise: Math.max(0, Number(row.amount_paise) || 0),
+        created_at: String(row.created_at || ''),
+        remittance_method: row.remittance_method ? String(row.remittance_method) : null,
+        payment_date: row.payment_date ? String(row.payment_date) : null,
+        admin_note: row.admin_note ? String(row.admin_note) : null,
+      });
+    }
+  }
+
+  if (donationIds.length) {
+    const { data: donProofRows } = await admin
+      .from('offline_payment_proofs')
+      .select(proofSelect)
+      .in('donation_id', donationIds)
+      .order('created_at', { ascending: false });
+    for (const row of donProofRows || []) {
+      const did = String(row.donation_id || '');
+      if (!did) continue;
+      pushProof(proofsByDon, did, {
+        id: String(row.id),
+        utr: row.utr ? String(row.utr) : null,
+        status: String(row.status || ''),
+        amount_paise: Math.max(0, Number(row.amount_paise) || 0),
+        created_at: String(row.created_at || ''),
+        remittance_method: row.remittance_method ? String(row.remittance_method) : null,
+        payment_date: row.payment_date ? String(row.payment_date) : null,
+        admin_note: row.admin_note ? String(row.admin_note) : null,
+      });
+    }
+  }
 
   if (regIds.length) {
     const { data } = await admin
@@ -293,16 +357,28 @@ async function buildLineContexts(lines: ReceivableLine[]): Promise<LineContext[]
     }
   }
 
-  return lines.map((line) => ({
-    line,
-    phone: line.registration_id ? phoneMap.get(line.registration_id) ?? null : null,
-    registration_code: line.registration_id ? codeMap.get(line.registration_id) ?? null : null,
-    proof_utr: line.proof_id
-      ? proofUtrMap.get(line.proof_id) ?? null
-      : line.registration_id
-        ? proofUtrByReg.get(line.registration_id) ?? null
-        : null,
-  }));
+  return lines.map((line) => {
+    const proofs: BankStatementProofSummary[] = [];
+    if (line.registration_id) {
+      for (const p of proofsByReg.get(line.registration_id) || []) proofs.push(p);
+    }
+    if (line.donation_id) {
+      for (const p of proofsByDon.get(line.donation_id) || []) {
+        if (!proofs.some((x) => x.id === p.id)) proofs.push(p);
+      }
+    }
+    return {
+      line,
+      phone: line.registration_id ? phoneMap.get(line.registration_id) ?? null : null,
+      registration_code: line.registration_id ? codeMap.get(line.registration_id) ?? null : null,
+      proof_utr: line.proof_id
+        ? proofUtrMap.get(line.proof_id) ?? null
+        : line.registration_id
+          ? proofUtrByReg.get(line.registration_id) ?? null
+          : null,
+      proofs,
+    };
+  });
 }
 
 function pickBest(candidates: BankStatementCandidate[]): BankStatementCandidate | null {

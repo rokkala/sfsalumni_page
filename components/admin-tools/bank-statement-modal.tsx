@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useId, useRef, useState } from 'react';
 import { ModalCloseButton, ModalOverlay } from '@/components/modal-shell';
 import { formatCostForDisplay } from '@/lib/registration/registration';
@@ -10,7 +11,11 @@ import {
 } from '@/lib/admin/bank-statement-types';
 import { creditEvidenceItems } from '@/lib/admin/bank-statement-credit-evidence';
 import type { SibStatementCredit } from '@/lib/admin/sib-statement-parse';
-import type { BankStatementCandidate } from '@/lib/admin/bank-statement-types';
+import type {
+  BankStatementCandidate,
+  BankStatementProofSummary,
+} from '@/lib/admin/bank-statement-types';
+import { remittanceMethodLabel } from '@/lib/payments/remittance-validate';
 import type { EventCatalog } from '@/lib/events/types';
 
 function formatInrPaise(paise: number): string {
@@ -25,6 +30,129 @@ function MatchEvidence({ candidate }: { candidate: BankStatementCandidate | unde
         <li key={reason}>{reason}</li>
       ))}
     </ul>
+  );
+}
+
+function CandidateProofList({
+  proofs,
+  bankReference,
+}: {
+  proofs: BankStatementProofSummary[];
+  bankReference: string | null;
+}) {
+  if (!proofs.length) {
+    return (
+      <p className="text-label-sm text-on-surface-variant mt-1">
+        No remittance proof on file.
+        {bankReference ? (
+          <>
+            {' '}
+            Registration ref: <span className="tabular-nums font-medium">{bankReference}</span>
+          </>
+        ) : null}
+      </p>
+    );
+  }
+  return (
+    <ul className="mt-1 space-y-2" role="list">
+      {proofs.map((p) => (
+        <li
+          key={p.id}
+          className="rounded-md border border-outline-variant/70 bg-surface-container-lowest px-2 py-1.5 text-label-sm"
+        >
+          <p className="font-medium">
+            <span className="capitalize">{p.status}</span>
+            {' · '}
+            {formatInrPaise(p.amount_paise)}
+          </p>
+          <p className="tabular-nums">
+            UTR <span className="font-medium">{p.utr || '—'}</span>
+          </p>
+          {p.payment_date ? <p>Payment date {p.payment_date}</p> : null}
+          {p.remittance_method ? (
+            <p>{remittanceMethodLabel(p.remittance_method as never)}</p>
+          ) : null}
+          {p.admin_note ? <p className="text-on-surface-variant">Note: {p.admin_note}</p> : null}
+          <p className="text-on-surface-variant text-[0.7rem] mt-0.5">
+            Submitted {new Date(p.created_at).toLocaleString('en-IN')}
+          </p>
+          <Link
+            href="/admin/remittance-proofs"
+            className="text-primary underline font-medium mt-1 inline-block"
+          >
+            Open Remittance proofs
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function CandidatePicker({
+  creditId,
+  chosen,
+  candidates,
+  onPick,
+}: {
+  creditId: string;
+  chosen: string;
+  candidates: BankStatementCandidate[];
+  onPick: (creditId: string, lineKey: string) => void;
+}) {
+  const groupName = `bank-match-${creditId}`;
+  return (
+    <fieldset className="max-w-md space-y-2">
+      <legend className="text-label-sm font-medium text-on-surface-variant">Pick match</legend>
+      <label className="flex items-start gap-2 rounded-lg border border-outline-variant/50 px-2 py-1.5 cursor-pointer">
+        <input
+          type="radio"
+          name={groupName}
+          className="mt-1 size-4"
+          checked={!chosen}
+          onChange={() => onPick(creditId, '')}
+        />
+        <span className="text-label-sm">None</span>
+      </label>
+      {candidates.map((c) => (
+        <div
+          key={c.line_key}
+          className={`rounded-lg border px-2 py-1.5 ${
+            chosen === c.line_key
+              ? 'border-primary bg-secondary-container/25'
+              : 'border-outline-variant/60'
+          }`}
+        >
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name={groupName}
+              className="mt-1 size-4"
+              checked={chosen === c.line_key}
+              onChange={() => onPick(creditId, c.line_key)}
+            />
+            <span className="flex-1 text-label-sm">
+              <span className="font-medium">
+                [{c.tier}·{c.match_score}] {c.payer_name}
+              </span>
+              {c.closed_line ? ' · PAID' : ` · due ${formatInrPaise(c.due_paise)}`}
+              {c.registration_code ? ` · ${c.registration_code}` : ''}
+              {c.bank_reference ? (
+                <>
+                  {' '}
+                  · ref <span className="tabular-nums">{c.bank_reference}</span>
+                </>
+              ) : null}
+            </span>
+          </label>
+          <details className="ml-6 mt-1">
+            <summary className="cursor-pointer text-label-sm text-primary font-semibold select-none">
+              Remittance proof{c.proofs.length === 1 ? '' : 's'} ({c.proofs.length || 'none'})
+            </summary>
+            <CandidateProofList proofs={c.proofs} bankReference={c.bank_reference} />
+          </details>
+        </div>
+      ))}
+    </fieldset>
   );
 }
 
@@ -465,22 +593,13 @@ export default function BankStatementModal({
                             </p>
                           </div>
                         ) : (
-                          <div className="max-w-md space-y-1">
-                            <select
-                              className="w-full rounded-lg border border-primary/15 px-2 py-1.5 text-body-sm bg-surface-ivory"
-                              value={chosen}
-                              onChange={(ev) => pickMatch(credit.credit_id, ev.target.value)}
-                            >
-                              <option value="">— None —</option>
-                              {candidates.map((c) => (
-                                <option key={c.line_key} value={c.line_key}>
-                                  [{c.tier}·{c.match_score}] {c.payer_name}
-                                  {c.closed_line ? ' · PAID' : ` · due ${formatInrPaise(c.due_paise)}`}
-                                  {c.registration_code ? ` · ${c.registration_code}` : ''}
-                                  {c.bank_reference ? ` · ref ${c.bank_reference}` : ''}
-                                </option>
-                              ))}
-                            </select>
+                          <div className="space-y-2">
+                            <CandidatePicker
+                              creditId={credit.credit_id}
+                              chosen={chosen}
+                              candidates={candidates}
+                              onPick={pickMatch}
+                            />
                             <MatchEvidence candidate={chosenCandidate} />
                           </div>
                         )}
