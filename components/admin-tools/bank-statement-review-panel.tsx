@@ -14,7 +14,10 @@ import {
   rowPassesLedgerFilter,
   type ReviewFilter,
 } from '@/lib/admin/bank-statement-review-state';
-import { RegistrationQuickViewModal } from '@/components/admin-tools/registration-quick-view-modal';
+import {
+  InlineProofDetail,
+  InlineRegistrationDetail,
+} from '@/components/admin-tools/bank-statement-inline-details';
 
 const inr = (paise: number) => formatCostForDisplay(paise);
 
@@ -34,6 +37,11 @@ function tierClass(tier: BankStatementMatchTier): string {
 function regRef(candidate: BankStatementCandidate): string {
   if (candidate.bank_reference) return candidate.bank_reference;
   return candidate.proofs.find((p) => p.utr)?.utr || '—';
+}
+
+function primaryProofId(candidate: BankStatementCandidate | null): string | null {
+  if (!candidate) return null;
+  return candidate.proofs[0]?.id ?? candidate.proof_id ?? null;
 }
 
 function candidateOptions(row: BankStatementCreditResult, includeClosedLines: boolean): BankStatementCandidate[] {
@@ -122,7 +130,8 @@ export function BankStatementReviewPanel({
   const [showGateway, setShowGateway] = useState(false);
   const [showDbSettled, setShowDbSettled] = useState(false);
   const [expandPickId, setExpandPickId] = useState<string | null>(null);
-  const [regViewId, setRegViewId] = useState<string | null>(null);
+  /** One inward at a time — stay inside the bank-statement popup. */
+  const [walkCreditId, setWalkCreditId] = useState<string | null>(null);
 
   const memberRows = useMemo(() => rows.filter((r) => r.credit.kind === 'credit'), [rows]);
   const gatewayRows = useMemo(() => rows.filter((r) => r.credit.kind === 'gateway'), [rows]);
@@ -151,6 +160,35 @@ export function BankStatementReviewPanel({
     return { credits, batchPaise, exc };
   }, [memberRows, selected, clearingBatch]);
 
+  const walkQueue = useMemo(
+    () => visibleRows.filter((r) => r.credit.kind === 'credit'),
+    [visibleRows]
+  );
+
+  const walkIndex = walkCreditId
+    ? walkQueue.findIndex((r) => r.credit.credit_id === walkCreditId)
+    : -1;
+
+  function walkPrev() {
+    if (!walkQueue.length) return;
+    const i = walkIndex >= 0 ? walkIndex : 0;
+    const next = (i - 1 + walkQueue.length) % walkQueue.length;
+    setWalkCreditId(walkQueue[next].credit.credit_id);
+    setExpandPickId(null);
+  }
+
+  function walkNext() {
+    if (!walkQueue.length) return;
+    const i = walkIndex >= 0 ? walkIndex : 0;
+    const next = (i + 1) % walkQueue.length;
+    setWalkCreditId(walkQueue[next].credit.credit_id);
+    setExpandPickId(null);
+  }
+
+  const rowsToRender =
+    walkCreditId && walkIndex >= 0 ? [walkQueue[walkIndex]] : visibleRows;
+  const inWalkthrough = walkCreditId !== null && walkIndex >= 0;
+
   const filters: { id: ReviewFilter; label: string; count: number }[] = [
     { id: 'all', label: 'All deposits', count: memberRows.length },
     { id: 'open', label: 'Needs your review', count: actionCount },
@@ -169,7 +207,55 @@ export function BankStatementReviewPanel({
           When done, click <strong>Mark selected as paid</strong> at the bottom ({approveCount} selected,{' '}
           {inr(totals.batchPaise)}).
         </li>
+        <li>
+          Use <strong>Validate inwards one by one</strong> to check bank, registration, and proof in this same window.
+        </li>
       </ol>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-outline-variant bg-white px-4 py-3">
+        {inWalkthrough ? (
+          <>
+            <button
+              type="button"
+              onClick={walkPrev}
+              className="cursor-pointer rounded-lg border border-outline-variant px-3 py-2 text-label-sm font-semibold hover:bg-surface-container"
+            >
+              ← Previous inward
+            </button>
+            <p className="text-label-sm font-semibold tabular-nums">
+              Inward {walkIndex + 1} of {walkQueue.length}
+            </p>
+            <button
+              type="button"
+              onClick={walkNext}
+              className="cursor-pointer rounded-lg border border-outline-variant px-3 py-2 text-label-sm font-semibold hover:bg-surface-container"
+            >
+              Next inward →
+            </button>
+            <button
+              type="button"
+              onClick={() => setWalkCreditId(null)}
+              className="cursor-pointer text-label-sm font-semibold text-primary underline"
+            >
+              Show all inwards
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-label-sm text-on-surface-variant">
+              Prefer to check each deposit with proof on screen?
+            </p>
+            <button
+              type="button"
+              disabled={walkQueue.length < 1}
+              onClick={() => setWalkCreditId(walkQueue[0]?.credit.credit_id ?? null)}
+              className="cursor-pointer rounded-lg bg-primary px-4 py-2 text-label-sm font-bold text-on-primary disabled:opacity-50"
+            >
+              Validate inwards one by one
+            </button>
+          </>
+        )}
+      </div>
 
       <div className="rounded-lg border border-outline-variant bg-white px-4 py-3 text-label-sm">
         <p className="font-semibold text-on-surface">
@@ -255,7 +341,7 @@ export function BankStatementReviewPanel({
       ) : null}
 
       <ul className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-2">
-        {visibleRows.map((row) => {
+        {rowsToRender.map((row) => {
           const credit = row.credit;
           const id = credit.credit_id;
           const lineKey = selected.get(id) || '';
@@ -344,13 +430,12 @@ export function BankStatementReviewPanel({
                       <p className="font-mono text-[0.72rem] break-all text-on-surface-variant">
                         Their ref {regRef(active)}
                       </p>
-                      {active.proofs[0] ? (
-                        <Link href="/admin/remittance-proofs" className="text-label-sm font-semibold text-primary underline">
-                          View uploaded proof ({active.proofs[0].status})
-                        </Link>
-                      ) : (
+                      {!inWalkthrough && primaryProofId(active) ? (
+                        <p className="text-label-sm text-on-surface-variant">Proof on file</p>
+                      ) : null}
+                      {!inWalkthrough && !primaryProofId(active) ? (
                         <p className="text-label-sm text-on-surface-variant">No proof uploaded</p>
-                      )}
+                      ) : null}
                     </>
                   ) : (
                     <p className="text-body-sm text-on-surface-variant">
@@ -385,16 +470,38 @@ export function BankStatementReviewPanel({
                     {expanded ? 'Hide choices' : picked ? 'Change match' : 'Choose who paid'}
                   </button>
                 ) : null}
-                {picked?.registration_id ? (
+                {!inWalkthrough && picked?.registration_id ? (
                   <button
                     type="button"
-                    onClick={() => setRegViewId(picked.registration_id)}
+                    onClick={() => setWalkCreditId(id)}
                     className="cursor-pointer rounded-lg border border-outline-variant bg-white px-4 py-2 text-label-sm font-semibold text-primary"
                   >
-                    Open registration
+                    Validate this inward
                   </button>
                 ) : null}
               </div>
+
+              {active?.registration_id && inWalkthrough ? (
+                <div className="border-t border-outline-variant/60 px-4 py-3">
+                  <p className="mb-2 text-[0.65rem] font-bold uppercase text-on-surface-variant">
+                    Registration details
+                  </p>
+                  <InlineRegistrationDetail registrationId={active.registration_id} />
+                </div>
+              ) : null}
+
+              {inWalkthrough && primaryProofId(active) ? (
+                <div className="border-t border-outline-variant/60 px-4 py-3">
+                  <p className="mb-2 text-[0.65rem] font-bold uppercase text-on-surface-variant">
+                    Uploaded proof
+                  </p>
+                  <InlineProofDetail proofId={primaryProofId(active)!} />
+                </div>
+              ) : inWalkthrough ? (
+                <div className="border-t border-outline-variant/60 px-4 py-3 text-label-sm text-on-surface-variant">
+                  No uploaded proof for this match.
+                </div>
+              ) : null}
 
               {expanded && alternatives.length > 0 ? (
                 <div className="border-t border-outline-variant/60 px-4 py-3">
@@ -445,12 +552,6 @@ export function BankStatementReviewPanel({
           Nothing in this filter — try <strong>All deposits</strong>.
         </p>
       ) : null}
-
-      <RegistrationQuickViewModal
-        registrationId={regViewId}
-        open={regViewId !== null}
-        onClose={() => setRegViewId(null)}
-      />
     </div>
   );
 }

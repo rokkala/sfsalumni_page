@@ -55,6 +55,11 @@ import {
   mergeProfilePack,
   readPackedProfile,
 } from '@/lib/registration/registration-fields';
+import {
+  applyWithdrawnRegistrationProofCredit,
+  donationDueWithPendingVerification,
+  feeDueWithPendingVerification,
+} from '@/lib/registration/pending-proof-due';
 import { withdrawPendingRegistrationProofs } from '@/lib/payments/withdraw-pending-proof';
 import { normalizePhoneNumber, phoneValidationError, splitE164 } from '@/lib/phone';
 import { createAdminClient } from '@/lib/supabase-admin';
@@ -155,6 +160,10 @@ type ExistingRow = {
   amount_paid_paise: number;
   donation_id: string | null;
   core_committee_manually_verified: boolean | null;
+  attending: boolean;
+  lunch: boolean;
+  number_of_guests: number;
+  guests_eating: number;
 };
 
 function profilePayload(me: AlumniAccount) {
@@ -241,11 +250,9 @@ async function enrichRegistrationForClient(
 ): Promise<Record<string, unknown>> {
   const feeTotal = Math.max(0, Number(reg.total_cost_paise) || 0);
   const feePaid = Math.max(0, Number(reg.amount_paid_paise) || 0);
-  const feeDue = amountDuePaise(feeTotal, feePaid);
 
   const donation =
     ctx.donation !== undefined ? ctx.donation : await loadDonation(admin, reg.donation_id);
-  const donationDue = donationDuePaise(donation);
 
   let pendingProof = ctx.pendingProof;
   if (pendingProof === undefined) {
@@ -266,6 +273,14 @@ async function enrichRegistrationForClient(
         }
       : null;
   }
+
+  const pendingVerification = Boolean(pendingProof);
+  const feeDue = feeDueWithPendingVerification(feeTotal, feePaid, pendingVerification);
+  const donationDue = donationDueWithPendingVerification({
+    intendedPaise: donation?.amount_paise ?? 0,
+    paymentStatus: donation?.payment_status ?? null,
+    pendingVerification,
+  });
 
   const guestCountLoad = clampGuestCount(Number(reg.number_of_guests) || 0);
   const attendingLoad = reg.attending === true;
@@ -327,13 +342,14 @@ async function enrichRegistrationForClient(
     guestCount: guestCountLoad,
   });
   const totalDueForPass = passReady ? 0 : feeDue + donationDue;
+  const storedTrimmed = String(storedCode ?? '').trim();
   const pass_state = passStateFromRegistration({
     venuePass,
     paymentStatus: reg.payment_status,
     totalDuePaise: totalDueForPass,
     pendingOfflineProof: Boolean(pendingProof),
+    hasRegistrationCode: Boolean(storedTrimmed),
   });
-  const storedTrimmed = String(storedCode ?? '').trim();
   const preview_registration_code =
     pass_state === 'pending_verification' && storedTrimmed ? storedTrimmed : null;
   const preview_registration_qr = preview_registration_code
@@ -765,16 +781,34 @@ export async function registerAccountForEvent(
 
   const { data: existingRaw } = await admin
     .from('event_registrations')
-    .select('id,payment_status,amount_paid_paise,donation_id,core_committee_manually_verified')
+    .select(
+      'id,payment_status,amount_paid_paise,donation_id,core_committee_manually_verified,attending,lunch,number_of_guests,guests_eating'
+    )
     .eq('event_id', eventId)
     .eq('account_id', me.id)
     .in('payment_status', [...OPEN_PAYMENT_STATUSES])
     .maybeSingle();
   const existing = existingRaw as ExistingRow | null;
 
+  const priorFeeTotalPaise = existing
+    ? repriceRegistration({
+        attending: existing.attending === true,
+        lunch: existing.lunch !== false,
+        number_of_guests: existing.number_of_guests,
+        guests_eating: existing.guests_eating,
+        batch: feeBatch ?? null,
+      }).total_cost_paise
+    : 0;
+  const priorDonation =
+    existing?.donation_id != null ? await loadDonation(admin, existing.donation_id) : null;
+  const priorDonationDuePaise = donationDuePaise(priorDonation);
+
   let withdrawnPendingProof = 0;
+  let withdrawnProofAmountPaise = 0;
   if (existing?.id) {
-    withdrawnPendingProof = await withdrawPendingRegistrationProofs(admin, existing.id);
+    const withdrawn = await withdrawPendingRegistrationProofs(admin, existing.id);
+    withdrawnPendingProof = withdrawn.count;
+    withdrawnProofAmountPaise = withdrawn.amountPaise;
     if (withdrawnPendingProof > 0) {
       await admin
         .from('event_registrations')
@@ -792,13 +826,42 @@ export async function registerAccountForEvent(
   if (!donationSync.ok) {
     return { status: donationSync.status, payload: { error: donationSync.error } };
   }
-  const donation = donationSync.donation;
+  let donation = donationSync.donation;
   const donationId = donation?.id ?? null;
-  const donationDue = donationDuePaise(donation);
 
   // The fee's payment status. A ₹0 fee is paid at save; the donation is tracked separately.
-  const priorPaid = Math.max(0, Number(existing?.amount_paid_paise) || 0);
-  const payment_status = statusFromAmounts(feeTotal, priorPaid);
+  let priorPaid = Math.max(0, Number(existing?.amount_paid_paise) || 0);
+  let donationDue = donationDuePaise(donation);
+  let payment_status = statusFromAmounts(feeTotal, priorPaid);
+
+  if (withdrawnPendingProof > 0) {
+    if (withdrawnProofAmountPaise < 1) {
+      // ponytail: legacy proofs may lack amount_paise — fall back to prior fee + donation due.
+      withdrawnProofAmountPaise = priorFeeTotalPaise + priorDonationDuePaise;
+    }
+    const credited = applyWithdrawnRegistrationProofCredit({
+      proofAmountPaise: withdrawnProofAmountPaise,
+      feeTotal,
+      feePaidBefore: priorPaid,
+      donationAmountDue: donationDue,
+    });
+    priorPaid = credited.amount_paid_paise;
+    payment_status = credited.payment_status;
+    donationDue = credited.donationDuePaise;
+    if (credited.donationSettledByCredit && donation?.id) {
+      const now = new Date().toISOString();
+      const { error: donationPaidErr } = await admin
+        .from('donations')
+        .update({ payment_status: 'paid', updated_at: now })
+        .eq('id', donation.id);
+      if (donationPaidErr) {
+        console.error('reg donation credit mark paid', donationPaidErr);
+      } else {
+        donation = { ...donation, payment_status: 'paid' };
+      }
+    }
+  }
+
   const feeDue = amountDuePaise(feeTotal, priorPaid);
 
   const row = {

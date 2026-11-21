@@ -847,7 +847,8 @@ function RegistrationPageInner() {
                     ? `Saved. Amount due ${formatCostForDisplay(loaded.money.totalDuePaise)}.`
                     : 'Saved. Nothing is due.';
             if (payload.withdrawn_pending_proof) {
-                saveText += ' Your pending payment proof was withdrawn — submit proof again if money is still due.';
+                saveText +=
+                    ' Your pending payment proof was withdrawn — submit proof or pay online for any additional amount due.';
             }
             setSaveMessage(saveText);
             setSaving(false);
@@ -997,13 +998,15 @@ function RegistrationPageInner() {
     }
 
     const formDirty = !savedFingerprint || choicesFingerprint(formData) !== savedFingerprint;
-    // Shown amounts: the database figures until the form is edited, then a live preview.
-    const displayMoney = formDirty ? previewMoney(money, formData) : money;
     const donationLocked = money.donationPaymentStatus === 'paid';
     const isSettled =
         committeeConfirmed || (money.paymentStatus === 'paid' && money.totalDuePaise === 0);
     // Do not show “awaiting verification” once the registration is confirmed / paid.
     const verificationPending = Boolean(pendingProof) && !isSettled;
+    // Shown amounts: the database figures until the form is edited, then a live preview.
+    const displayMoney = formDirty
+        ? previewMoney(money, formData, { pendingVerification: verificationPending })
+        : money;
     const [payingOnline, setPayingOnline] = useState(false);
     const busy = saving || payingOnline;
 
@@ -1109,8 +1112,10 @@ function RegistrationPageInner() {
             role="status"
         >
             {verificationPending
-                ? 'Payment submitted — pass QR below is not valid for entry until finance confirms. Saving changes withdraws the pending proof.'
-                : 'Registration is not complete until payment is made and verified'}
+                ? 'Payment submitted — your registration ID and QR stay the same. Pending verification clears only after every payment line is confirmed; saving changes withdraws the pending proof.'
+                : money.passState === 'pending_verification'
+                  ? 'Your registration ID and QR stay the same. Pay any amount still due; pending verification clears only after every payment line is confirmed by finance.'
+                  : 'Registration is not complete until payment is made and verified'}
         </div>
     ) : null;
 

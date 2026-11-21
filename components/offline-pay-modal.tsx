@@ -408,7 +408,7 @@ export default function OfflinePayModal({
               <p className="text-sm text-on-surface-variant">
                 {source.donationOnly
                   ? 'The committee will confirm your donation after they review your proof.'
-                  : 'Your entry pass QR will appear once the committee marks this payment paid. You can update details after they review it.'}
+                  : 'Your registration ID and QR stay the same. Pending verification clears only after every payment line is confirmed by finance. You can update details and pay any additional amount due.'}
               </p>
             ) : (
               <p className="text-sm text-on-surface-variant">

@@ -241,9 +241,9 @@ if (
     pendingProof: true,
     bankReference: 'x',
     totalDuePaise: 0,
-  }) !== 'Payment verified'
+  }) !== 'pending verification'
 ) {
-  throw new Error('status paid wins');
+  throw new Error('proof pending keeps pending verification until cleared');
 }
 if (
   verificationStatusLabel({
@@ -251,9 +251,9 @@ if (
     pendingProof: false,
     bankReference: '',
     totalDuePaise: 50000,
-  }) !== 'not submitted'
+  }) !== 'pending verification'
 ) {
-  throw new Error('status paid fee-only but donation due');
+  throw new Error('status paid with donation still due');
 }
 
 const shown = pendingProofDisplay({ utr: 'UTR99', screenshot_path: null });
@@ -301,9 +301,21 @@ if (
     paymentStatus: 'pending',
     totalDuePaise: 50000,
     pendingOfflineProof: false,
+    hasRegistrationCode: false,
   }) !== 'payment_required'
 ) {
   throw new Error('pass payment required');
+}
+if (
+  passStateFromRegistration({
+    venuePass: true,
+    paymentStatus: 'partial',
+    totalDuePaise: 100000,
+    pendingOfflineProof: false,
+    hasRegistrationCode: true,
+  }) !== 'pending_verification'
+) {
+  throw new Error('pass keeps preview QR when Reg ID reserved');
 }
 
 if (pendingPaymentMemberLabel(true) !== 'Awaiting confirmation') {

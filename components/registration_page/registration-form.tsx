@@ -31,6 +31,7 @@ import type { EventCatalog } from '@/lib/events/types';
 import { eventFeeNotApplicable } from '@/lib/events/venue-attendance';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
 import {
+    PASS_QR_UNCHANGED_HINT,
     pendingProofDisplay,
     registrationFormHeading,
     verificationStatusLabel,
@@ -342,7 +343,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                     <p className={`text-body-sm text-on-surface-variant ${hasSavedReg ? 'mb-4' : 'mb-8'}`}>
                         {hasSavedReg
                             ? verificationPending
-                                ? 'Your Bank / UPI proof is pending committee review. Guest count, food choice, and donation stay locked until then.'
+                                ? `Your Bank / UPI proof is pending committee review. ${PASS_QR_UNCHANGED_HINT}`
                                 : 'Change your attendance, lunch, guests, or parking anytime before you submit Bank / UPI proof. Amounts update as you edit.'
                             : event
                               ? `Register for ${event.title}`
@@ -361,9 +362,10 @@ export function RegistrationForm(props: RegistrationFormProps) {
                     )}
                     {verificationPending && (
                         <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface mb-6" role="status">
-                            Payment proof is with the committee. You can still update this form —{' '}
-                            <strong>Save changes</strong> withdraws that proof so you can fix details and
-                            submit proof again for the new amount.
+                            Payment proof is with the committee. {PASS_QR_UNCHANGED_HINT} You can still
+                            update this form — <strong>Save changes</strong> withdraws that proof. Guest or
+                            donation increases then need proof or online pay for the <strong>additional</strong>{' '}
+                            amount only.
                         </p>
                     )}
 
@@ -635,7 +637,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                         <PaymentSummary
                             money={displayMoney}
                             isPreview={formDirty}
-                            dueOnly={money.feePaidPaise > 0}
+                            dueOnly={money.feePaidPaise > 0 || verificationPending}
                             refundEmail={event?.refund_email}
                             eventTitle={event?.title || 'Event'}
                             fullName={accountContact?.full_name || ''}

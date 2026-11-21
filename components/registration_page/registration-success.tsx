@@ -20,7 +20,7 @@ import {
 import { eventFeeNotApplicable } from '@/lib/events/venue-attendance';
 import type { EventCatalog } from '@/lib/events/types';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
-import { pendingProofDisplay } from '@/lib/payments/offline-proof';
+import { PASS_QR_UNCHANGED_HINT, pendingProofDisplay } from '@/lib/payments/offline-proof';
 import type { FormData, RegistrationMoney } from '@/lib/registration/types';
 
 const INPUT_CLASS =
@@ -102,7 +102,7 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
     const guestsEating = clampGuestsEating(formData.guests_eating, guestCount);
     const feeLabel = formatCostForDisplay(EVENT_FEE_PER_PERSON_PAISE);
     const amountDuePaise = displayMoney.totalDuePaise;
-    const choicesLocked = busy || verificationPending;
+    const choicesLocked = busy;
     const donationOnlyRegistration = eventFeeNotApplicable(formData.attending, guestCount);
 
     const canOpenPay =
@@ -158,7 +158,9 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
         });
     }
 
-    const showPaySection = !verificationPending && (formDirty || amountDuePaise > 0 || pendingProof);
+    const showPaySection =
+        (verificationPending && formDirty && amountDuePaise > 0) ||
+        (!verificationPending && (formDirty || amountDuePaise > 0 || pendingProof));
 
     const passBlock = passBlockFromMoney({
         passState: isConfirmed ? 'verified' : money.passState,
@@ -210,8 +212,9 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
 
                             {verificationPending ? (
                                 <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
-                                    Payment proof is pending review. Save changes withdraws that proof so you can
-                                    update guests and submit again.
+                                    {PASS_QR_UNCHANGED_HINT} You can add guests — the summary shows only the extra
+                                    fee. Saving withdraws the pending proof; then submit proof or pay online for any
+                                    additional amount still due.
                                 </p>
                             ) : null}
 

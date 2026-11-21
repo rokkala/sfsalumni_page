@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { PASS_QR_UNCHANGED_HINT } from '@/lib/payments/offline-proof';
 
 export default function RegistrationQr({
   code,
@@ -41,7 +42,7 @@ export default function RegistrationQr({
       src={src}
       alt={
         preview
-          ? `Preview QR for registration ${code} — not valid for venue entry yet`
+          ? `Preview QR for registration ${code}. ${PASS_QR_UNCHANGED_HINT}`
           : `QR code for registration ${code}`
       }
       width={220}

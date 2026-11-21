@@ -1,6 +1,7 @@
 // Donation choice only. Bank / UPI pay lives next to Save changes on the registration form.
 
 import type { Dispatch, SetStateAction } from 'react';
+import { PASS_QR_UNCHANGED_HINT } from '@/lib/payments/offline-proof';
 import {
     DONATION_MAX_RUPEES,
     DONATION_MIN_RUPEES,
@@ -52,6 +53,12 @@ export function DonationSection({
             {donationLocked && !verificationPending && (
                 <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
                     Your donation is paid. To change it, contact the committee.
+                </p>
+            )}
+            {verificationPending && !donationLocked && (
+                <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
+                    {PASS_QR_UNCHANGED_HINT} A higher donation shows only the extra amount in the payment
+                    summary until you save (saving withdraws the pending proof).
                 </p>
             )}
             <div className="flex flex-col gap-3">
