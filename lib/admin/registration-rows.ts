@@ -66,16 +66,16 @@ export function one<T>(value: T | T[] | null | undefined): T | null {
     return Array.isArray(value) ? value[0] || null : value;
 }
 
-/** Reprices registrations and issues any missing codes, so the figures read next are current. */
+/**
+ * Reprices registrations and issues any missing codes, so the figures read next are current.
+ * ponytail: skip full-catalog reprice when no event filter — O(events × regs) was timing out
+ * the admin Registrations list on Vercel; reprice runs when event_id is set or from mark-paid flows.
+ */
 export async function refreshRegistrations(eventId: string): Promise<void> {
     const admin = createAdminClient();
-    if (eventId) {
-        await repriceEventRegistrations(eventId);
-    } else {
-        const { data: catalog } = await admin.from('event_catalog').select('id');
-        for (const row of catalog || []) {
-            await repriceEventRegistrations(String((row as { id: string }).id));
-        }
+    const scoped = String(eventId || '').trim();
+    if (scoped) {
+        await repriceEventRegistrations(scoped);
     }
     await issueMissingPaidCodes(admin as unknown as RegistrationCodeAdmin);
 }

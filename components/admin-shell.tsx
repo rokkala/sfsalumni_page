@@ -179,10 +179,38 @@ const NAV_GROUPS: AdminNavGroup[] = [
         iconClass: 'text-jubilee-amber',
         wellClass: 'bg-jubilee-amber/12',
       },
+    ],
+  },
+  {
+    id: 'reports',
+    label: 'Reports',
+    links: [
+      {
+        href: '/admin/reports',
+        label: 'Reports',
+        icon: 'assessment',
+        match: 'exact',
+        iconClass: 'text-jubilee-amber',
+        wellClass: 'bg-jubilee-amber/12',
+      },
+      {
+        href: '/admin/reports/approvals',
+        label: 'Approval audit',
+        icon: 'history',
+        iconClass: 'text-jubilee-amber',
+        wellClass: 'bg-jubilee-amber/12',
+      },
+      {
+        href: '/admin/donations',
+        label: 'Donation report',
+        icon: 'receipt_long',
+        iconClass: 'text-jubilee-amber',
+        wellClass: 'bg-jubilee-amber/12',
+      },
       {
         href: '/admin/cashfree-transactions',
         label: 'Cashfree reports',
-        icon: 'receipt_long',
+        icon: 'account_balance_wallet',
         iconClass: 'text-jubilee-amber',
         wellClass: 'bg-jubilee-amber/12',
       },
@@ -192,13 +220,6 @@ const NAV_GROUPS: AdminNavGroup[] = [
     id: 'donations',
     label: 'Donations',
     links: [
-      {
-        href: '/admin/donations',
-        label: 'Donation report',
-        icon: 'receipt_long',
-        iconClass: 'text-jubilee-amber',
-        wellClass: 'bg-jubilee-amber/12',
-      },
       {
         href: '/admin/donation-causes',
         label: 'Donation types',

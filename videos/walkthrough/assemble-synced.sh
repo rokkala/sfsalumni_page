@@ -72,3 +72,7 @@ fi
 if [[ "$which" == "committee" || "$which" == "both" ]]; then
   assemble_audience committee
 fi
+if [[ "$which" == "registration-payments" ]]; then
+  assemble_audience registration-payments
+  mv -f "$OUT/registration-payments-walkthrough.mp4" "$OUT/registration-and-payments-walkthrough.mp4"
+fi

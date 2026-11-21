@@ -1,0 +1,75 @@
+[
+  {
+    "id": "01-login",
+    "path": "/login",
+    "action": "login-alumni",
+    "vo": "Welcome. This is the live Golden Jubilee registration journey on sfsalumnis.com, with every payment path the portal offers. We start at Login. Enter your email or username and tap Continue. On the next screen, enter your password and tap Sign in to open the alumni portal."
+  },
+  {
+    "id": "02-member",
+    "path": "/member",
+    "vo": "You land on My Home. If registration is still open, the main call to action takes you straight to the Jubilee event. You can also open Events from the menu anytime to register or continue an unfinished form."
+  },
+  {
+    "id": "03-events",
+    "path": "/events",
+    "action": "goto-register",
+    "vo": "On Events you see reunions and celebrations open for registration. Open the Golden Jubilee listing, then continue to the registration form for your batch."
+  },
+  {
+    "id": "04-registration-overview",
+    "path": "/registration",
+    "action": "advance-form",
+    "scroll": true,
+    "vo": "This is the Event Registration Form. Your name, email, and phone come from your alumni account. Confirm batch and section, attendance, and venue access. Choose food preference — Vegetarian, Non-Veg, or No Food. Set parking — two-wheeler count, four-wheeler count, or none. Add guests and their meal choices when the event allows. The fee total updates as you edit."
+  },
+  {
+    "id": "05-save-and-summary",
+    "path": "/registration",
+    "action": "advance-form",
+    "scroll": true,
+    "vo": "Scroll down to Payment summary. Registration fee, optional donation, total, amount already paid, and due now are shown in Indian rupees. View in gives an approximate foreign estimate — you always pay in INR. Tap Save registration or Save changes so your party size and amounts are stored before you pay. We will not complete a real payment in this recording."
+  },
+  {
+    "id": "06-pay-buttons",
+    "path": "/registration",
+    "action": "focus-payment",
+    "vo": "Three payment entry points appear when money is due. Pay online opens Cashfree checkout — cards, net banking, and UPI inside a secure modal. UPI PhonePe jumps straight to the bank-and-UPI helper with QR code and Reg ID for your payment note. Pay Via Alternative Method opens the same helper on NEFT, cash, class representative, or foreign remittance."
+  },
+  {
+    "id": "07-upi-modal",
+    "path": "/registration",
+    "action": "offline-upi",
+    "vo": "UPI PhonePe shows the committee UPI ID, amount, and a QR you can scan in PhonePe or any UPI app. Copy bank details with one tap. Put your SFS registration code in the UPI note — it must match the Reg ID on screen. After paying, enter the twelve-digit UPI Ref No from your receipt and upload a screenshot, then Submit for verification. The committee confirms before your venue pass unlocks."
+  },
+  {
+    "id": "08-neft-rtgs",
+    "path": "/registration",
+    "action": "offline-method-neft",
+    "vo": "Under How did you pay, choose NEFT or RTGS. The modal lists account name, number, IFSC, and branch. After your transfer, enter the bank reference number and payment date, then submit proof for verification."
+  },
+  {
+    "id": "09-cash-cheque",
+    "path": "/registration",
+    "action": "offline-method-cash",
+    "vo": "Cash or cheque deposit is for alumni who pay at the school counter or bank challan. Select that option, note the challan or deposit reference, and submit so Finance can match the entry."
+  },
+  {
+    "id": "10-class-rep",
+    "path": "/registration",
+    "action": "offline-method-class",
+    "vo": "Class representative is when your batch rep collects money and remits on your behalf. Enter rep name, batch year, section, and phone so the committee can reconcile the bulk payment."
+  },
+  {
+    "id": "11-foreign",
+    "path": "/registration",
+    "action": "offline-method-foreign",
+    "vo": "Foreign remittance covers alumni paying from outside India. Enter your wire reference, amount in foreign currency, currency code, and INR equivalent you were charged. Upload proof if prompted. Amounts remain in rupees on the registration form."
+  },
+  {
+    "id": "12-cashfree",
+    "path": "/registration",
+    "action": "cashfree-preview",
+    "vo": "Pay online is the Cashfree checkout — cards, net banking, and instant UPI without leaving sfsalumnis.com. When payment succeeds, the page verifies automatically and shows your registration code. We stop on this button without completing a real charge. That is the full registration and payment picture — save your form, pick the channel that fits you, and welcome to the Golden Jubilee. Once SFS, always SFS."
+  }
+]

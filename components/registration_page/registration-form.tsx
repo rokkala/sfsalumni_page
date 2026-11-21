@@ -617,6 +617,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                         <PaymentSummary
                             money={displayMoney}
                             isPreview={formDirty}
+                            dueOnly={money.feePaidPaise > 0}
                             refundEmail={event?.refund_email}
                             eventTitle={event?.title || 'Event'}
                             fullName={accountContact?.full_name || ''}

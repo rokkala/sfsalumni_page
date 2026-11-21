@@ -37,7 +37,11 @@ export async function GET(request: Request) {
     if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const eventId = new URL(request.url).searchParams.get('event_id') || '';
-    await refreshRegistrations(eventId);
+    try {
+        await refreshRegistrations(eventId);
+    } catch (e) {
+        console.error('event-ops refresh', e);
+    }
 
     const { rows, error } = await loadRegistrationRows(eventId);
     if (error) {

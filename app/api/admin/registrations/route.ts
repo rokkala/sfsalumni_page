@@ -127,7 +127,11 @@ export async function GET(request: Request) {
     const stateParam = searchParams.get('state') || '';
     const q = (searchParams.get('q') || '').trim().toLowerCase();
 
-    await refreshRegistrations(eventId);
+    try {
+        await refreshRegistrations(eventId);
+    } catch (e) {
+        console.error('admin registrations refresh', e);
+    }
     const { rows, error } = await loadRegistrationRows(eventId);
     if (error) {
         console.error('admin registrations', error);

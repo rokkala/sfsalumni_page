@@ -1019,12 +1019,26 @@ function RegistrationPageInner() {
                 formData={formData}
                 setFormData={setFormData}
                 event={event}
+                accountFullName={accountContact?.full_name || ''}
                 busy={busy}
                 formDirty={formDirty}
                 money={money}
+                displayMoney={displayMoney}
                 committeeConfirmed={committeeConfirmed}
                 error={error}
+                saveMessage={saveMessage}
                 signedIn={Boolean(user)}
+                verificationPending={verificationPending}
+                pendingProof={verificationPending ? pendingProof : null}
+                savedBankReference={savedBankReference}
+                bankAccount={bankAccount}
+                onlineCheckoutEnabled={onlineCheckoutEnabled}
+                payingOnline={payingOnline}
+                onPrepareOfflinePay={prepareOfflinePay}
+                onPayOnline={() => void payRegistrationOnline()}
+                onOfflineSubmitted={(message) => {
+                    void handleOfflineSubmitted(message);
+                }}
                 onSavePartySize={() => void savePartySize()}
                 onEditDetails={() => {
                     setError('');

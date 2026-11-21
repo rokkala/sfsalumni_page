@@ -17,6 +17,7 @@ type Row = {
     event_title: string;
     full_name: string;
     email: string;
+    phone_number?: string | null;
     batch: number | null;
     attending: boolean;
     number_of_guests: number;
@@ -78,6 +79,11 @@ export default function AdminRegistrationsInner() {
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) {
             setMessage(payload.error || 'Could not load registrations');
+            setRows([]);
+            return;
+        }
+        if (!Array.isArray(payload)) {
+            setMessage('Could not load registrations (unexpected response).');
             setRows([]);
             return;
         }
@@ -302,6 +308,11 @@ export default function AdminRegistrationsInner() {
                                                 >
                                                     <div className="font-medium text-primary truncate">{r.full_name}</div>
                                                     <div className="text-label-sm text-on-surface-variant truncate">{r.email}</div>
+                                                    {r.phone_number ? (
+                                                        <div className="text-label-sm text-on-surface-variant truncate">
+                                                            {r.phone_number}
+                                                        </div>
+                                                    ) : null}
                                                     <div className="text-label-sm text-on-surface-variant mt-0.5 sm:hidden">
                                                         Batch {r.batch ?? '—'} · {r.state_label}
                                                     </div>

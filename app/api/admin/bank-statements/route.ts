@@ -76,7 +76,11 @@ export async function POST(request: Request) {
   const { to_match, already_settled } = await partitionSettledCredits(credits);
 
   const checkout = await loadCheckoutSettings();
-  const include_closed_lines = checkout.bank_statement_include_closed_lines;
+  const formClosed = form.get('include_closed_lines');
+  const include_closed_lines =
+    formClosed === '1' ||
+    formClosed === 'true' ||
+    checkout.bank_statement_include_closed_lines;
 
   const { results, error } = await matchStatementCredits({
     credits: to_match,

@@ -19,7 +19,11 @@ export async function GET(request: Request) {
       ? statusParam
       : 'all';
 
-  await refreshRegistrations(eventId);
+  try {
+    await refreshRegistrations(eventId);
+  } catch (e) {
+    console.error('admin receivables refresh', e);
+  }
 
   const cashfreeSyncRequested = url.searchParams.get('cashfree_sync') === '1';
 

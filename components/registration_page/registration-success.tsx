@@ -1,26 +1,57 @@
 // components/registration_page/registration-success.tsx
-// Confirmation screen. It shows the registration code once the registration is paid in full.
-// Confirmed registrations never ask for payment. Amounts come from `money`, which the server returned.
+// Confirmation screen. Shows the registration code when paid in full.
+// Alumni can add guests here and pay only the extra amount due.
 
-import type { Dispatch, SetStateAction } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import BackHomeLink from '@/components/back-home-link';
 import EventPushOptIn from '@/components/event-push-opt-in';
+import OfflinePayModal from '@/components/offline-pay-modal';
+import { ModalBlockingScrim } from '@/components/modal-shell';
 import RegistrationQr from '@/components/registration-qr';
-import { formatCostForDisplay, MAX_GUESTS, MIN_GUESTS } from '@/lib/registration/registration';
+import { PaymentSummary } from '@/components/registration_page/registration-payment-summary';
+import {
+    clampGuestCount,
+    clampGuestsEating,
+    EVENT_FEE_PER_PERSON_PAISE,
+    formatCostForDisplay,
+    MAX_GUESTS,
+    MIN_GUESTS,
+} from '@/lib/registration/registration';
+import { eventFeeNotApplicable } from '@/lib/events/venue-attendance';
 import type { EventCatalog } from '@/lib/events/types';
+import type { BankAccountPublic } from '@/lib/payments/bank-details';
+import { pendingProofDisplay } from '@/lib/payments/offline-proof';
 import type { FormData, RegistrationMoney } from '@/lib/registration/types';
+
+const INPUT_CLASS =
+    'w-full px-4 py-3.5 rounded-lg border border-outline-variant text-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50';
 
 export interface RegistrationSuccessProps {
     formData: FormData;
     setFormData: Dispatch<SetStateAction<FormData>>;
     event: EventCatalog | null;
+    accountFullName: string;
     busy: boolean;
     formDirty: boolean;
+    /** Saved amounts from the database. */
     money: RegistrationMoney;
-    /** True when payment is settled and the registration code / QR is ready. */
+    /** Preview while guest counts are edited. */
+    displayMoney: RegistrationMoney;
     committeeConfirmed: boolean;
     error: string;
+    saveMessage: string;
     signedIn: boolean;
+    verificationPending: boolean;
+    pendingProof: { utr: string | null; hasScreenshot: boolean } | null;
+    savedBankReference: string;
+    bankAccount: BankAccountPublic | null;
+    onlineCheckoutEnabled: boolean;
+    payingOnline: boolean;
+    onPrepareOfflinePay: () => Promise<
+        { registrationId: string; transactionRef: string } | { error: string }
+    >;
+    onPayOnline: () => void | Promise<void>;
+    onOfflineSubmitted: (message: string) => void;
     onSavePartySize: () => void;
     onEditDetails: () => void;
 }
@@ -29,23 +60,89 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
     const {
         formData,
         setFormData,
+        event,
+        accountFullName,
         busy,
         formDirty,
         money,
+        displayMoney,
         committeeConfirmed,
         error,
+        saveMessage,
         signedIn,
+        verificationPending,
+        pendingProof,
+        savedBankReference,
+        bankAccount,
+        onlineCheckoutEnabled,
+        payingOnline,
+        onPrepareOfflinePay,
+        onPayOnline,
+        onOfflineSubmitted,
         onSavePartySize,
         onEditDetails,
     } = props;
+
+    const [payOpen, setPayOpen] = useState(false);
+    const [payInitialMethod, setPayInitialMethod] = useState<'neft_rtgs' | 'upi' | undefined>(
+        undefined
+    );
+    const [payRegistrationId, setPayRegistrationId] = useState('');
+    const [payRegistrationCode, setPayRegistrationCode] = useState('');
+    const [payPreparing, setPayPreparing] = useState(false);
+    const [payError, setPayError] = useState('');
 
     const isPaidInFull = money.paymentStatus === 'paid' && money.totalDuePaise === 0;
     const isConfirmed = committeeConfirmed || isPaidInFull;
     const code = isConfirmed ? money.registrationCode : null;
     const qrPayload = isConfirmed ? money.registrationQr : null;
 
+    const guestCount = clampGuestCount(formData.number_of_guests);
+    const guestsEating = clampGuestsEating(formData.guests_eating, guestCount);
+    const feeLabel = formatCostForDisplay(EVENT_FEE_PER_PERSON_PAISE);
+    const amountDuePaise = displayMoney.totalDuePaise;
+    const choicesLocked = busy || verificationPending;
+    const donationOnlyRegistration = eventFeeNotApplicable(formData.attending, guestCount);
+
+    const canOpenPay =
+        Boolean(bankAccount) &&
+        !formDirty &&
+        !busy &&
+        !payPreparing &&
+        (Boolean(pendingProof) || amountDuePaise > 0);
+
+    const canPayUpi = canOpenPay && Boolean(bankAccount?.upi_id);
+
+    const canPayOnline =
+        onlineCheckoutEnabled &&
+        !formDirty &&
+        !busy &&
+        !payingOnline &&
+        !verificationPending &&
+        amountDuePaise > 0;
+
+    async function openPayModal(initialMethod?: 'neft_rtgs' | 'upi') {
+        if (!canOpenPay) return;
+        setPayPreparing(true);
+        setPayError('');
+        const result = await onPrepareOfflinePay();
+        setPayPreparing(false);
+        if ('error' in result) {
+            setPayError(result.error);
+            return;
+        }
+        if (!bankAccount) {
+            setPayError('Bank details are not configured yet. Contact the committee.');
+            return;
+        }
+        setPayRegistrationId(result.registrationId);
+        setPayRegistrationCode(result.transactionRef);
+        setPayInitialMethod(initialMethod);
+        setPayOpen(true);
+    }
+
     function changeGuestCount(raw: string) {
-        const next = Math.min(MAX_GUESTS, Math.max(MIN_GUESTS, parseInt(raw, 10) || 0));
+        const next = clampGuestCount(parseInt(raw, 10));
         setFormData({
             ...formData,
             number_of_guests: next,
@@ -53,78 +150,267 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
         });
     }
 
+    function changeGuestsEating(raw: string) {
+        setFormData({
+            ...formData,
+            guests_eating: clampGuestsEating(parseInt(raw, 10), guestCount),
+        });
+    }
+
+    const showPaySection = !verificationPending && (formDirty || amountDuePaise > 0 || pendingProof);
+
     return (
-        <div className="min-h-screen bg-surface flex items-center justify-center px-6 pt-20">
-            <div className="w-full max-w-lg text-center">
-                <div className="bg-surface-paper rounded-2xl shadow-lg p-8 border border-surface-container-low">
-                    <div className="mb-6">
-                        <span className="material-symbols-outlined text-[64px] text-green-600 mx-auto block">
-                            check_circle
-                        </span>
-                    </div>
-
-                    <h1 className="text-headline-lg text-primary mb-3">
-                        {isConfirmed ? 'Registration confirmed' : 'Registration saved'}
-                    </h1>
-
-                    {!isConfirmed && (
-                        <p className="text-body-sm text-on-surface-variant mb-6">
-                            {money.totalDuePaise > 0
-                                ? `Amount due ${formatCostForDisplay(money.totalDuePaise)}. Edit details to pay by Bank / UPI.`
-                                : 'Your registration is saved. Your registration ID appears once payment is confirmed.'}
-                        </p>
-                    )}
-
-                    {code && (
-                        <div className="mb-6 rounded-lg border border-outline-variant bg-surface px-4 py-5">
-                            <p className="text-label-md text-primary uppercase tracking-wider">Registration ID</p>
-                            <p className="mt-2 text-headline-md text-primary tracking-[0.18em] font-bold">{code}</p>
-                            <div className="mt-4 flex justify-center">
-                                <RegistrationQr code={code} payload={qrPayload} />
-                            </div>
-                            <p className="mt-3 text-body-sm text-on-surface-variant">Show this QR code at the venue.</p>
+        <>
+            <ModalBlockingScrim active={payPreparing} />
+            <div className="min-h-screen bg-surface flex items-center justify-center px-6 pt-20 pb-12">
+                <div className="w-full max-w-lg">
+                    <div className="bg-surface-paper rounded-2xl shadow-lg p-8 border border-surface-container-low text-left">
+                        <div className="text-center mb-6">
+                            <span className="material-symbols-outlined text-[64px] text-green-600 mx-auto block">
+                                check_circle
+                            </span>
                         </div>
-                    )}
 
+                        <h1 className="text-headline-lg text-primary mb-3 text-center">
+                            {isConfirmed ? 'Registration confirmed' : 'Registration saved'}
+                        </h1>
 
-
-                    {error && (
-                        <div role="alert" className="p-3 rounded-lg bg-error-container text-error text-body-sm mb-6 text-left">
-                            {error}
-                        </div>
-                    )}
-
-                    <div className="flex flex-col gap-3">
-                        {formDirty && (
-                            <button
-                                type="button"
-                                disabled={busy}
-                                onClick={onSavePartySize}
-                                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-lg bg-primary hover:bg-navy-subtle text-on-primary text-label-md uppercase tracking-wider shadow-md transition-all disabled:opacity-50 cursor-pointer"
-                            >
-                                {busy ? 'Saving…' : 'Save changes'}
-                            </button>
-                        )}
                         {!isConfirmed && (
-                            <button
-                                type="button"
-                                onClick={onEditDetails}
-                                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-lg border border-outline-variant text-primary text-label-md uppercase tracking-wider transition-all cursor-pointer"
-                            >
-                                Edit attendance, lunch or guests
-                            </button>
+                            <p className="text-body-sm text-on-surface-variant mb-6 text-center">
+                                {money.totalDuePaise > 0
+                                    ? `Amount due ${formatCostForDisplay(money.totalDuePaise)}. Add guests below or edit details to pay.`
+                                    : 'Your registration is saved. Your registration ID appears once payment is confirmed.'}
+                            </p>
                         )}
-                        <BackHomeLink
-                            signedIn={signedIn}
-                            showIcon={false}
-                            guestHref={isConfirmed ? '/member' : '/'}
-                            signedInLabel="Go to alumni portal"
-                            guestLabel={isConfirmed ? 'Go to alumni portal' : 'Back to Home'}
-                            className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-lg border border-outline-variant text-primary text-label-md uppercase tracking-wider transition-all"
-                        />
+
+                        {code && (
+                            <div className="mb-6 rounded-lg border border-outline-variant bg-surface px-4 py-5 text-center">
+                                <p className="text-label-md text-primary uppercase tracking-wider">Registration ID</p>
+                                <p className="mt-2 text-headline-md text-primary tracking-[0.18em] font-bold">{code}</p>
+                                <div className="mt-4 flex justify-center">
+                                    <RegistrationQr code={code} payload={qrPayload} />
+                                </div>
+                                <p className="mt-3 text-body-sm text-on-surface-variant">Show this QR code at the venue.</p>
+                            </div>
+                        )}
+
+                        <section className="mb-6 space-y-4">
+                            <h2 className="text-headline-sm text-primary uppercase tracking-wider">Add guests</h2>
+                            <p className="text-body-sm text-on-surface-variant">
+                                Bring more people? Update guest counts, save, then pay {feeLabel} per additional guest
+                                (only the extra amount is charged).
+                            </p>
+
+                            {verificationPending ? (
+                                <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
+                                    Payment proof is pending review. Save changes withdraws that proof so you can
+                                    update guests and submit again.
+                                </p>
+                            ) : null}
+
+                            <div className="flex flex-col">
+                                <label htmlFor="success_guest_count" className="text-label-md text-primary mb-2 uppercase tracking-wider">
+                                    Guests attending (not including you)
+                                </label>
+                                <input
+                                    id="success_guest_count"
+                                    type="number"
+                                    min={MIN_GUESTS}
+                                    max={MAX_GUESTS}
+                                    step={1}
+                                    value={formData.number_of_guests}
+                                    onChange={(e) => changeGuestCount(e.target.value)}
+                                    disabled={choicesLocked}
+                                    className={INPUT_CLASS}
+                                />
+                            </div>
+
+                            {guestCount > 0 ? (
+                                <div className="flex flex-col">
+                                    <label
+                                        htmlFor="success_guests_eating"
+                                        className="text-label-md text-primary mb-2 uppercase tracking-wider"
+                                    >
+                                        Guests having lunch
+                                    </label>
+                                    <input
+                                        id="success_guests_eating"
+                                        type="number"
+                                        min={0}
+                                        max={guestCount}
+                                        step={1}
+                                        value={guestsEating}
+                                        onChange={(e) => changeGuestsEating(e.target.value)}
+                                        disabled={choicesLocked}
+                                        className={INPUT_CLASS}
+                                    />
+                                </div>
+                            ) : null}
+                        </section>
+
+                        {showPaySection ? (
+                            <div className="mb-6 space-y-4">
+                                <PaymentSummary
+                                    money={displayMoney}
+                                    isPreview={formDirty}
+                                    dueOnly
+                                    refundEmail={event?.refund_email}
+                                    eventTitle={event?.title || 'Event'}
+                                    fullName={accountFullName}
+                                />
+
+                                {pendingProof ? (
+                                    <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
+                                        {pendingProofDisplay({
+                                            utr: pendingProof.utr,
+                                            screenshot_path: pendingProof.hasScreenshot ? 'on-file' : null,
+                                        }).label}
+                                    </p>
+                                ) : null}
+
+                                {payError ? (
+                                    <p role="alert" className="text-body-sm text-error">
+                                        {payError}
+                                    </p>
+                                ) : null}
+
+                                <div className="flex flex-col gap-3">
+                                    {formDirty ? (
+                                        <button
+                                            type="button"
+                                            disabled={busy}
+                                            onClick={onSavePartySize}
+                                            className="w-full py-3 rounded-lg bg-primary text-on-primary text-label-md uppercase tracking-wider font-bold hover:bg-navy-subtle disabled:opacity-50 transition-all"
+                                        >
+                                            {busy ? 'Saving…' : 'Save guest changes'}
+                                        </button>
+                                    ) : null}
+                                    {canPayOnline ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => void onPayOnline()}
+                                            disabled={!canPayOnline}
+                                            className="w-full py-3 rounded-lg bg-jubilee-gold-deep text-on-primary text-label-md uppercase tracking-wider font-bold hover:opacity-90 disabled:opacity-50 transition-all"
+                                        >
+                                            {payingOnline ? 'Opening checkout…' : 'Pay online'}
+                                        </button>
+                                    ) : null}
+                                    {canPayUpi ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => void openPayModal('upi')}
+                                            disabled={payPreparing}
+                                            className="w-full py-3 rounded-lg bg-[#5f259f] text-white text-label-md uppercase tracking-wider font-bold hover:opacity-90 disabled:opacity-50 transition-all"
+                                        >
+                                            {payPreparing ? 'Preparing…' : 'UPI PhonePe'}
+                                        </button>
+                                    ) : null}
+                                    {canOpenPay ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => void openPayModal()}
+                                            className="w-full py-3 rounded-lg bg-dark-blue text-on-dark-blue text-label-md uppercase tracking-wider font-bold hover:opacity-90 disabled:opacity-50 transition-all"
+                                        >
+                                            {payPreparing
+                                                ? 'Preparing…'
+                                                : pendingProof
+                                                  ? 'View payment proof'
+                                                  : 'Pay via alternative method'}
+                                        </button>
+                                    ) : null}
+                                </div>
+                                {formDirty && amountDuePaise > 0 ? (
+                                    <p className="text-body-sm text-on-surface-variant">
+                                        Save guest changes before paying.
+                                    </p>
+                                ) : null}
+                                {!bankAccount && amountDuePaise > 0 ? (
+                                    <p className="text-body-sm text-on-surface-variant">
+                                        Bank details are not available yet. Contact the committee.
+                                    </p>
+                                ) : null}
+                            </div>
+                        ) : null}
+
+                        {saveMessage && !error ? (
+                            <p role="status" className="p-3 rounded-lg border border-jubilee-gold-light bg-secondary-container/30 text-body-sm text-on-secondary-fixed-variant mb-4">
+                                {saveMessage}
+                            </p>
+                        ) : null}
+
+                        {error && (
+                            <div role="alert" className="p-3 rounded-lg bg-error-container text-error text-body-sm mb-6">
+                                {error}
+                            </div>
+                        )}
+
+                        {!showPaySection && savedBankReference ? (
+                            <p className="text-body-sm text-on-surface-variant mb-4">{savedBankReference}</p>
+                        ) : null}
+
+                        <div className="flex flex-col gap-3">
+                            {!isConfirmed ? (
+                                <button
+                                    type="button"
+                                    onClick={onEditDetails}
+                                    className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-lg border border-outline-variant text-primary text-label-md uppercase tracking-wider transition-all cursor-pointer"
+                                >
+                                    Edit attendance, lunch or parking
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={onEditDetails}
+                                    className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-lg border border-outline-variant text-primary text-label-md uppercase tracking-wider transition-all cursor-pointer"
+                                >
+                                    Full registration form
+                                </button>
+                            )}
+                            <BackHomeLink
+                                signedIn={signedIn}
+                                showIcon={false}
+                                guestHref={isConfirmed ? '/member' : '/'}
+                                signedInLabel="Go to alumni portal"
+                                guestLabel={isConfirmed ? 'Go to alumni portal' : 'Back to Home'}
+                                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-lg border border-outline-variant text-primary text-label-md uppercase tracking-wider transition-all"
+                            />
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
+
+            {bankAccount && payRegistrationId ? (
+                <OfflinePayModal
+                    open={payOpen}
+                    onClose={() => {
+                        setPayOpen(false);
+                        setPayInitialMethod(undefined);
+                    }}
+                    initialRemittanceMethod={payInitialMethod}
+                    account={bankAccount}
+                    amountPaise={amountDuePaise}
+                    note="Golden Jubilee registration"
+                    transactionId={payRegistrationCode}
+                    source={{
+                        type: 'registration',
+                        registrationId: payRegistrationId,
+                        donationOnly: donationOnlyRegistration,
+                    }}
+                    existingProof={
+                        pendingProof
+                            ? {
+                                  utr: pendingProof.utr,
+                                  hasScreenshot: pendingProof.hasScreenshot,
+                                  status: 'pending',
+                              }
+                            : null
+                    }
+                    onSubmitted={(message) => {
+                        onOfflineSubmitted(message);
+                        setPayOpen(false);
+                    }}
+                />
+            ) : null}
+        </>
     );
 }

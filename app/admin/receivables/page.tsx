@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import AdminShell from '@/components/admin-shell';
 import { formatCostForDisplay } from '@/lib/registration/registration';
 import type { ReceivableLine } from '@/lib/admin/receivable-lines';
@@ -20,6 +21,7 @@ const BUTTON_OUTLINE =
   'rounded-lg border border-primary/20 bg-surface-ivory px-3 py-1.5 text-label-sm text-primary disabled:opacity-50 cursor-pointer';
 
 export default function AdminReceivablesPage() {
+  const searchParams = useSearchParams();
   const [events, setEvents] = useState<EventCatalog[]>([]);
   const [lines, setLines] = useState<ReceivableLine[]>([]);
   const [summary, setSummary] = useState({ line_count: 0, due_paise: 0, settled_paise: 0 });
@@ -62,6 +64,11 @@ export default function AdminReceivablesPage() {
       setMessage(`Cashfree auto-match: ${sync.matched} line(s) marked paid.`);
     }
   }, [eventId, status, q]);
+
+  useEffect(() => {
+    const preset = searchParams.get('q');
+    if (preset?.trim()) setQ(preset.trim());
+  }, [searchParams]);
 
   useEffect(() => {
     void fetch('/api/admin/events')
@@ -233,49 +240,56 @@ export default function AdminReceivablesPage() {
         </span>
       </div>
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-        <label className="flex items-center gap-2 text-body-sm cursor-pointer">
-          <input
-            type="checkbox"
-            checked={bankStatementOn}
-            disabled={settingsBusy || bankStatementEnvKill}
-            onChange={(e) => void toggleBankStatement(e.target.checked)}
-            className="size-4"
-          />
-          Bank statement upload &amp; match
-        </label>
-        {bankStatementOn && !bankStatementEnvKill ? (
-          <>
-            <label className="flex items-center gap-2 text-body-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={bankStatementIncludeClosed}
-                disabled={settingsBusy}
-                onChange={(e) => void toggleBankStatementIncludeClosed(e.target.checked)}
-                className="size-4"
-              />
-              Statement match includes paid lines (testing)
-            </label>
-            <button
-              type="button"
-              onClick={() => setStatementOpen(true)}
-              className="rounded-lg border border-primary/25 bg-surface-ivory px-4 py-2.5 text-label-sm font-semibold text-primary cursor-pointer hover:bg-surface-container"
-            >
-              Upload bank statement
-            </button>
-          </>
-        ) : null}
+      <section
+        aria-labelledby="bank-statement-panel"
+        className="mb-5 rounded-xl border border-outline-variant bg-surface-ivory/80 p-4"
+      >
+        <h2 id="bank-statement-panel" className="text-headline-sm text-primary">
+          Bank open item clearing
+        </h2>
+        <p className="mt-1 mb-3 max-w-2xl text-body-sm text-on-surface-variant">
+          Import statement credits into an open-item ledger, clear against receivable lines, post the batch.
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <label className="flex cursor-pointer items-center gap-2 text-body-sm">
+            <input
+              type="checkbox"
+              checked={bankStatementOn}
+              disabled={settingsBusy || bankStatementEnvKill}
+              onChange={(e) => void toggleBankStatement(e.target.checked)}
+              className="size-4 accent-primary"
+            />
+            Enable feature
+          </label>
+          {bankStatementOn && !bankStatementEnvKill ? (
+            <>
+              <label className="flex cursor-pointer items-center gap-2 text-body-sm">
+                <input
+                  type="checkbox"
+                  checked={bankStatementIncludeClosed}
+                  disabled={settingsBusy}
+                  onChange={(e) => void toggleBankStatementIncludeClosed(e.target.checked)}
+                  className="size-4 accent-primary"
+                />
+                Include paid lines (testing)
+              </label>
+              <button
+                type="button"
+                onClick={() => setStatementOpen(true)}
+                className="cursor-pointer rounded-lg bg-primary px-4 py-2 text-label-sm font-semibold text-on-primary"
+              >
+                Open upload
+              </button>
+            </>
+          ) : null}
+        </div>
         {bankStatementEnvKill ? (
-          <p className="text-label-sm text-on-surface-variant">
-            Disabled by Vercel env <code className="text-label-sm">BANK_STATEMENT_RECONCILE_ENABLED</code> —
-            remove or set to true, redeploy to re-enable.
+          <p className="mt-2 text-label-sm text-error">
+            Off via <code className="text-label-sm">BANK_STATEMENT_RECONCILE_ENABLED</code> — redeploy after
+            changing env.
           </p>
         ) : null}
-        <p className="text-label-sm text-on-surface-variant sm:w-full">
-          Roll back the app build with{' '}
-          <code className="text-label-sm">npm run deploy:rollback</code> (see docs/DEPLOY_ROLLBACK.md).
-        </p>
-      </div>
+      </section>
 
       <div className="flex flex-col md:flex-row gap-3 mb-5">
         <select

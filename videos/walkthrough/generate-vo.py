@@ -59,7 +59,7 @@ async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "audience",
-        choices=("alumni", "committee", "both"),
+        choices=("alumni", "committee", "registration-payments", "both"),
         nargs="?",
         default="both",
     )
@@ -70,7 +70,10 @@ async def main() -> None:
     )
     args = parser.parse_args()
     print(f"Voice: {args.voice} @ {RATE}")
-    targets = ["alumni", "committee"] if args.audience == "both" else [args.audience]
+    if args.audience == "both":
+        targets = ["alumni", "committee"]
+    else:
+        targets = [args.audience]
     for name in targets:
         await build_audience(name, args.voice)
 

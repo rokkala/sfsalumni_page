@@ -17,6 +17,8 @@ export interface PaymentSummaryProps {
   refundEmail: RefundEmail;
   eventTitle: string;
   fullName: string;
+  /** When true, only the amount still due is shown (no fee breakdown or “already paid”). */
+  dueOnly?: boolean;
 }
 
 export function PaymentSummary({
@@ -25,49 +27,71 @@ export function PaymentSummary({
   refundEmail,
   eventTitle,
   fullName,
+  dueOnly = false,
 }: PaymentSummaryProps) {
   const donationPaid = money.donationPaymentStatus === 'paid';
   const totalPaise = money.feeTotalPaise + money.donationIntendedPaise;
   const alreadyPaidPaise = money.feePaidPaise + (donationPaid ? money.donationIntendedPaise : 0);
   const duePaise = money.totalDuePaise;
+  const showDueOnly = dueOnly && (alreadyPaidPaise > 0 || duePaise > 0);
 
   return (
     <section className="bg-surface-container-low rounded-lg px-6 py-6 space-y-3">
       <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-headline-sm text-primary uppercase tracking-wider">Payment summary</h2>
-        <span className="text-label-sm text-on-surface-variant">
-          {isPreview ? 'Preview: not saved yet' : 'Saved amounts'}
-        </span>
+        <h2 className="text-headline-sm text-primary uppercase tracking-wider">
+          {showDueOnly ? 'Additional payment' : 'Payment summary'}
+        </h2>
+        {!showDueOnly ? (
+          <span className="text-label-sm text-on-surface-variant">
+            {isPreview ? 'Preview: not saved yet' : 'Saved amounts'}
+          </span>
+        ) : null}
       </div>
 
-      <div className="flex justify-between items-center">
-        <span className="text-body-md text-on-surface-variant">Registration fee</span>
-        <span className="text-body-md text-on-surface tabular-nums">
-          {formatCostForDisplay(money.feeTotalPaise)}
-        </span>
-      </div>
-      <div className="flex justify-between items-center">
-        <span className="text-body-md text-on-surface-variant">
-          Donation{donationPaid ? ' (paid)' : ''}
-        </span>
-        <span className="text-body-md text-on-surface tabular-nums">
-          {formatCostForDisplay(money.donationIntendedPaise)}
-        </span>
-      </div>
-      <div className="flex justify-between items-center border-t border-outline-variant pt-3">
-        <span className="text-body-md text-on-surface-variant">Total</span>
-        <span className="text-headline-sm text-primary tabular-nums">
-          {formatCostForDisplay(totalPaise)}
-        </span>
-      </div>
-      <div className="flex justify-between items-center">
-        <span className="text-body-md text-on-surface-variant">Already paid</span>
-        <span className="text-body-md text-on-surface tabular-nums">
-          {formatCostForDisplay(alreadyPaidPaise)}
-        </span>
-      </div>
-      <div className="flex justify-between items-start gap-4 border-t border-outline-variant pt-3">
-        <span className="text-headline-sm text-primary pt-1">Due now</span>
+      {showDueOnly ? (
+        <p className="text-body-sm text-on-surface-variant">
+          Pay only the extra amount for your updated registration.
+        </p>
+      ) : (
+        <>
+          <div className="flex justify-between items-center">
+            <span className="text-body-md text-on-surface-variant">Registration fee</span>
+            <span className="text-body-md text-on-surface tabular-nums">
+              {formatCostForDisplay(money.feeTotalPaise)}
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-body-md text-on-surface-variant">
+              Donation{donationPaid ? ' (paid)' : ''}
+            </span>
+            <span className="text-body-md text-on-surface tabular-nums">
+              {formatCostForDisplay(money.donationIntendedPaise)}
+            </span>
+          </div>
+          <div className="flex justify-between items-center border-t border-outline-variant pt-3">
+            <span className="text-body-md text-on-surface-variant">Total</span>
+            <span className="text-headline-sm text-primary tabular-nums">
+              {formatCostForDisplay(totalPaise)}
+            </span>
+          </div>
+          {alreadyPaidPaise > 0 ? (
+            <div className="flex justify-between items-center">
+              <span className="text-body-md text-on-surface-variant">Already paid</span>
+              <span className="text-body-md text-on-surface tabular-nums">
+                {formatCostForDisplay(alreadyPaidPaise)}
+              </span>
+            </div>
+          ) : null}
+        </>
+      )}
+      <div
+        className={
+          showDueOnly
+            ? 'flex justify-between items-start gap-4'
+            : 'flex justify-between items-start gap-4 border-t border-outline-variant pt-3'
+        }
+      >
+        <span className="text-headline-sm text-primary pt-1">{showDueOnly ? 'Amount due' : 'Due now'}</span>
         <AmountWithFx
           paise={duePaise}
           className="text-right"
