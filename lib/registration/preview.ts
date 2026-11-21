@@ -15,6 +15,21 @@ import {
 } from '@/lib/registration/registration';
 import { donationIntentPaise, type FormData, type RegistrationMoney } from '@/lib/registration/types';
 
+/** Proof total for preview; uses stored amount_paise or saved fee+donation when legacy proof has no amount. */
+export function effectivePendingProofAmountPaise(
+    saved: RegistrationMoney,
+    pendingProofAmountPaise: number | undefined,
+    hasPendingProof: boolean
+): number {
+    const stored = Math.max(0, Math.floor(Number(pendingProofAmountPaise) || 0));
+    if (stored > 0) return stored;
+    if (!hasPendingProof && saved.passState !== 'pending_verification') return 0;
+    const donationPending =
+        saved.donationPaymentStatus !== 'paid' && saved.donationPaymentStatus !== 'failed';
+    const donationPart = donationPending ? Math.max(0, saved.donationIntendedPaise) : 0;
+    return Math.max(0, saved.feeTotalPaise) + donationPart;
+}
+
 export type PreviewMoneyOptions = {
     /**
      * Credit the saved registration fee in the preview (fee/donation already paid or awaiting
@@ -56,10 +71,12 @@ export function creditedFeePaidPaise(
         donationIntendedPaise: saved.donationIntendedPaise,
         donationPaymentStatus: saved.donationPaymentStatus,
     });
-    // When proof has an explicit amount, credit only that fee slice — not the whole saved total.
+    // Explicit proof amount → credit that fee slice only. Partial DB payment → paidRecorded. Else full saved fee in flight.
     let covered = paidRecorded;
     if (proofAmount > 0) {
         covered = Math.max(covered, proofFee);
+    } else if (paidRecorded > 0) {
+        covered = Math.max(covered, paidRecorded);
     } else {
         covered = Math.max(covered, savedTotal);
     }

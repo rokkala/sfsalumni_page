@@ -191,8 +191,8 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
 
                         {!isConfirmed && (
                             <p className="text-body-sm text-on-surface-variant mb-6 text-center">
-                                {money.totalDuePaise > 0
-                                    ? `Amount due ${formatCostForDisplay(money.totalDuePaise)}. Add guests below or edit details to pay.`
+                                {(formDirty ? displayMoney.totalDuePaise : money.totalDuePaise) > 0
+                                    ? `Amount due ${formatCostForDisplay(formDirty ? displayMoney.totalDuePaise : money.totalDuePaise)}. Add guests below or edit details to pay.`
                                     : 'Your registration is saved. Your registration ID appears once payment is confirmed.'}
                             </p>
                         )}
