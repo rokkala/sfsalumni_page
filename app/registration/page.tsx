@@ -305,7 +305,8 @@ function RegistrationPageInner() {
                         setBankAccount(body.bank.account ?? null);
                         setOnlineCheckoutEnabled(Boolean(body.bank.online_checkout_available));
                     }
-                    if (body.registration) {
+                    const savedFromBootstrap = Boolean(body.registration?.registration);
+                    if (savedFromBootstrap && body.registration) {
                         applyRegistrationPayload(body.registration, true);
                     } else {
                         setHasSavedReg(false);
@@ -317,18 +318,16 @@ function RegistrationPageInner() {
                         setSavedBankReference('');
                         setPendingProof(null);
                         setCurrentStep('details');
+                        void prefillFromMemberRoster(
+                            profile.phone_number || '',
+                            profile.email || '',
+                            profile.full_name || ''
+                        ).then((step) => {
+                            if (active) {
+                                setCurrentStep((prev) => (prev === 'details' ? step : prev));
+                            }
+                        });
                     }
-                    void prefillFromMemberRoster(
-                        profile.phone_number || '',
-                        profile.email || '',
-                        profile.full_name || ''
-                    ).then((step) => {
-                        if (active) {
-                            setCurrentStep((prev) =>
-                                prev === 'details' || prev === 'phone' ? step : prev
-                            );
-                        }
-                    });
                 } else {
                     setUser(null);
                     setGate(null);
