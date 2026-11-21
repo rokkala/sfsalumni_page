@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { prefetchVenuePasses } from '@/lib/client/venue-pass-prefetch';
 
 type Me = {
   id: string;
@@ -33,6 +34,7 @@ export default function MemberGate({
     let active = true;
     (async () => {
       try {
+        if (mode === 'signed-in') prefetchVenuePasses();
         const res = await fetch('/api/auth/me');
         if (!active) return;
         if (res.status === 401) {

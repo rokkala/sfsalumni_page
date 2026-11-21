@@ -14,6 +14,7 @@ import { eventFeeNotApplicable } from '@/lib/events/venue-attendance';
 import { registrationPath } from '@/lib/events/choose-event';
 import { venuePassSummary } from '@/lib/events/venue-pass';
 import { passStatusBadge, venuePassPaymentCue, type VenuePassState } from '@/lib/payments/offline-proof';
+import { prefetchVenuePasses } from '@/lib/client/venue-pass-prefetch';
 
 /** One saved registration as GET /api/registration/event returns it. */
 type Registration = {
@@ -78,7 +79,7 @@ export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pa
     let active = true;
     (async () => {
       try {
-        const res = await fetch('/api/registration/venue-passes', { cache: 'no-store' });
+        const res = await prefetchVenuePasses();
         if (!active) return;
         if (res.status === 401) {
           setPhase('hidden');

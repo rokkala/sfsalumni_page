@@ -147,7 +147,156 @@ type GetAccountRegistrationOpts = {
   skipReprice?: boolean;
   /** Reuse profile from a prior load (venue-pass batch). */
   profile?: Record<string, unknown>;
+  /** Pass display: no reprice, reserve, or code issuance — read stored values only. */
+  readOnly?: boolean;
+  storedCode?: string | null;
+  donation?: import('@/lib/events/mark-paid').DonationSnapshot | null;
+  pendingProof?: {
+    id: string;
+    utr: string | null;
+    has_screenshot: boolean;
+    status: 'pending';
+  } | null;
 };
+
+type EnrichRegistrationCtx = {
+  profile: Record<string, unknown>;
+  readOnly?: boolean;
+  storedCode?: string | null;
+  donation?: import('@/lib/events/mark-paid').DonationSnapshot | null;
+  pendingProof?: GetAccountRegistrationOpts['pendingProof'];
+};
+
+async function enrichRegistrationForClient(
+  admin: AdminClient,
+  me: AlumniAccount,
+  reg: RegistrationRow,
+  ctx: EnrichRegistrationCtx
+): Promise<Record<string, unknown>> {
+  const feeTotal = Math.max(0, Number(reg.total_cost_paise) || 0);
+  const feePaid = Math.max(0, Number(reg.amount_paid_paise) || 0);
+  const feeDue = amountDuePaise(feeTotal, feePaid);
+
+  const donation =
+    ctx.donation !== undefined ? ctx.donation : await loadDonation(admin, reg.donation_id);
+  const donationDue = donationDuePaise(donation);
+
+  let pendingProof = ctx.pendingProof;
+  if (pendingProof === undefined) {
+    const { data: pendingProofRows } = await admin
+      .from('offline_payment_proofs')
+      .select('id,utr,screenshot_path,status')
+      .eq('registration_id', reg.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const pendingProofRow = Array.isArray(pendingProofRows) ? pendingProofRows[0] : null;
+    pendingProof = pendingProofRow
+      ? {
+          id: String(pendingProofRow.id),
+          utr: typeof pendingProofRow.utr === 'string' ? pendingProofRow.utr : null,
+          has_screenshot: Boolean(pendingProofRow.screenshot_path),
+          status: 'pending' as const,
+        }
+      : null;
+  }
+
+  const guestCountLoad = clampGuestCount(Number(reg.number_of_guests) || 0);
+  const attendingLoad = reg.attending === true;
+  const venuePass = needsVenuePass(attendingLoad, guestCountLoad);
+
+  let storedCode: string | null;
+  if (ctx.readOnly) {
+    storedCode =
+      ctx.storedCode !== undefined
+        ? ctx.storedCode
+        : await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id);
+  } else {
+    if (!venuePass) {
+      await clearRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id);
+    }
+    const regSnap: import('@/lib/events/mark-paid').RegistrationSnapshot = {
+      id: reg.id,
+      event_id: reg.event_id,
+      account_id: me.id,
+      attending: attendingLoad,
+      number_of_guests: guestCountLoad,
+      total_cost_paise: feeTotal,
+      amount_paid_paise: feePaid,
+      payment_status: reg.payment_status,
+      donation_id: reg.donation_id,
+      razorpay_order_id: null,
+      razorpay_payment_id: null,
+    };
+    await reserveUpiPaymentCode(admin as unknown as RegistrationCodeAdmin, reg.id, {
+      venuePass,
+      amountDuePaise: feeDue + donationDue,
+    });
+    await issueRegistrationCodeIfEligible(admin, reg.id, {
+      ...passEligibilityFromRegistration(regSnap, donationDue),
+      paymentStatus: reg.payment_status,
+    });
+    storedCode = await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id);
+  }
+
+  const regSnap: import('@/lib/events/mark-paid').RegistrationSnapshot = {
+    id: reg.id,
+    event_id: reg.event_id,
+    account_id: me.id,
+    attending: attendingLoad,
+    number_of_guests: guestCountLoad,
+    total_cost_paise: feeTotal,
+    amount_paid_paise: feePaid,
+    payment_status: reg.payment_status,
+    donation_id: reg.donation_id,
+    razorpay_order_id: null,
+    razorpay_payment_id: null,
+  };
+  const registrationCode = visibleRegistrationCode(storedCode, regSnap, donationDue);
+  const upi_payment_ref = venuePass ? storedCode || String(reg.id) : String(reg.id);
+  const passReady = isEligibleForRegistrationCode({
+    paymentStatus: reg.payment_status,
+    donationDuePaise: donationDue,
+    attending: attendingLoad,
+    guestCount: guestCountLoad,
+  });
+  const totalDueForPass = passReady ? 0 : feeDue + donationDue;
+  const pass_state = passStateFromRegistration({
+    venuePass,
+    paymentStatus: reg.payment_status,
+    totalDuePaise: totalDueForPass,
+    pendingOfflineProof: Boolean(pendingProof),
+  });
+  const storedTrimmed = String(storedCode ?? '').trim();
+  const preview_registration_code =
+    pass_state === 'pending_verification' && storedTrimmed ? storedTrimmed : null;
+  const preview_registration_qr = preview_registration_code
+    ? registrationQrPayload(preview_registration_code, reg.id)
+    : null;
+
+  return {
+    ...reg,
+    fee_due_paise: feeDue,
+    intended_donation_paise: donation?.amount_paise ?? 0,
+    donation_payment_status: donation?.payment_status ?? null,
+    donation_due_paise: donationDue,
+    total_due_paise: totalDueForPass,
+    committee_confirmed: passReady,
+    pass_state,
+    registration_code: registrationCode,
+    upi_payment_ref,
+    registration_qr: registrationCode ? registrationQrPayload(registrationCode, reg.id) : null,
+    preview_registration_code,
+    preview_registration_qr,
+    event_fee_payment_label: formatEventFeePaymentLabel({
+      attending: attendingLoad,
+      guestCount: guestCountLoad,
+      totalCostPaise: feeTotal,
+      paymentStatus: reg.payment_status,
+    }),
+    pending_offline_proof: pendingProof,
+  };
+}
 
 /**
  * Brings the donation row in line with the intended amount.
@@ -269,107 +418,18 @@ export async function getAccountRegistrationForEvent(
   const reg = registrationRow as RegistrationRow | null;
   if (!reg) return { status: 200, payload: { registration: null, profile } };
 
-  const feeTotal = Math.max(0, Number(reg.total_cost_paise) || 0);
-  const feePaid = Math.max(0, Number(reg.amount_paid_paise) || 0);
-  const feeDue = amountDuePaise(feeTotal, feePaid);
-
-  const donation = await loadDonation(admin, reg.donation_id);
-  const donationDue = donationDuePaise(donation);
-
-  const { data: pendingProofRows } = await admin
-    .from('offline_payment_proofs')
-    .select('id,utr,screenshot_path,status')
-    .eq('registration_id', reg.id)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false })
-    .limit(1);
-  const pendingProofRow = Array.isArray(pendingProofRows) ? pendingProofRows[0] : null;
-  const pendingProof = pendingProofRow
-    ? {
-        id: String(pendingProofRow.id),
-        utr: typeof pendingProofRow.utr === 'string' ? pendingProofRow.utr : null,
-        has_screenshot: Boolean(pendingProofRow.screenshot_path),
-        status: 'pending' as const,
-      }
-    : null;
-
-  const guestCountLoad = clampGuestCount(Number(reg.number_of_guests) || 0);
-  const attendingLoad = reg.attending === true;
-  const venuePass = needsVenuePass(attendingLoad, guestCountLoad);
-  if (!venuePass) {
-    await clearRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id);
-  }
-  const regSnap: import('@/lib/events/mark-paid').RegistrationSnapshot = {
-    id: reg.id,
-    event_id: reg.event_id,
-    account_id: me.id,
-    attending: attendingLoad,
-    number_of_guests: guestCountLoad,
-    total_cost_paise: feeTotal,
-    amount_paid_paise: feePaid,
-    payment_status: reg.payment_status,
-    donation_id: reg.donation_id,
-    razorpay_order_id: null,
-    razorpay_payment_id: null,
-  };
-  await reserveUpiPaymentCode(admin as unknown as RegistrationCodeAdmin, reg.id, {
-    venuePass,
-    amountDuePaise: feeDue + donationDue,
+  const registration = await enrichRegistrationForClient(admin, me, reg, {
+    profile,
+    readOnly: opts?.readOnly,
+    storedCode: opts?.storedCode,
+    donation: opts?.donation,
+    pendingProof: opts?.pendingProof,
   });
-  await issueRegistrationCodeIfEligible(admin, reg.id, {
-    ...passEligibilityFromRegistration(regSnap, donationDue),
-    paymentStatus: reg.payment_status,
-  });
-  const storedCode = await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, reg.id);
-  const registrationCode = visibleRegistrationCode(storedCode, regSnap, donationDue);
-  const upi_payment_ref = venuePass ? storedCode || String(reg.id) : String(reg.id);
-  const passReady = isEligibleForRegistrationCode({
-    paymentStatus: reg.payment_status,
-    donationDuePaise: donationDue,
-    attending: attendingLoad,
-    guestCount: guestCountLoad,
-  });
-  const totalDueForPass = passReady ? 0 : feeDue + donationDue;
-  const pass_state = passStateFromRegistration({
-    venuePass,
-    paymentStatus: reg.payment_status,
-    totalDuePaise: totalDueForPass,
-    pendingOfflineProof: Boolean(pendingProof),
-  });
-  const storedTrimmed = String(storedCode ?? '').trim();
-  const preview_registration_code =
-    pass_state === 'pending_verification' && storedTrimmed ? storedTrimmed : null;
-  const preview_registration_qr = preview_registration_code
-    ? registrationQrPayload(preview_registration_code, reg.id)
-    : null;
 
   return {
     status: 200,
     payload: {
-      registration: {
-        ...reg,
-        fee_due_paise: feeDue,
-        intended_donation_paise: donation?.amount_paise ?? 0,
-        donation_payment_status: donation?.payment_status ?? null,
-        donation_due_paise: donationDue,
-        total_due_paise: totalDueForPass,
-        committee_confirmed: passReady,
-        pass_state,
-        registration_code: registrationCode,
-        upi_payment_ref,
-        registration_qr: registrationCode
-          ? registrationQrPayload(registrationCode, reg.id)
-          : null,
-        preview_registration_code,
-        preview_registration_qr,
-        event_fee_payment_label: formatEventFeePaymentLabel({
-          attending: attendingLoad,
-          guestCount: guestCountLoad,
-          totalCostPaise: feeTotal,
-          paymentStatus: reg.payment_status,
-        }),
-        pending_offline_proof: pendingProof,
-      },
+      registration,
       profile,
     },
   };
@@ -403,71 +463,113 @@ export async function listAccountVenuePasses(
   }
 
   const admin = createAdminClient();
-  const { data: regIndex, error: indexError } = await admin
-    .from('event_registrations')
-    .select('event_id')
-    .eq('account_id', me.id)
-    .in('payment_status', [...OPEN_PAYMENT_STATUSES]);
 
-  if (indexError) {
-    console.error('venue pass list', indexError);
+  const [profile, regsResult] = await Promise.all([
+    loadAccountProfile(admin, me),
+    admin
+      .from('event_registrations')
+      .select(REG_SELECT)
+      .eq('account_id', me.id)
+      .in('payment_status', [...OPEN_PAYMENT_STATUSES]),
+  ]);
+
+  if (regsResult.error) {
+    console.error('venue pass list', regsResult.error);
     return {
       status: 500,
       payload: {
         passes: [],
-        profile: profilePayload(me),
+        profile,
       },
     };
   }
 
-  const eventIds = [
-    ...new Set(
-      (regIndex || [])
-        .map((row) => String((row as { event_id?: string }).event_id || '').trim())
-        .filter(Boolean)
-    ),
-  ];
-
-  const profile = await loadAccountProfile(admin, me);
-  if (!eventIds.length) {
+  const regRows = (regsResult.data || []) as unknown as RegistrationRow[];
+  if (!regRows.length) {
     return { status: 200, payload: { passes: [], profile } };
   }
 
-  await Promise.all(eventIds.map((eventId) => repriceEventRegistrations(eventId)));
+  const regIds = regRows.map((r) => r.id);
+  const eventIds = [...new Set(regRows.map((r) => String(r.event_id).trim()).filter(Boolean))];
+  const donationIds = [
+    ...new Set(regRows.map((r) => r.donation_id).filter((id): id is string => Boolean(id))),
+  ];
 
-  const { data: eventRows, error: eventError } = await selectCatalog((columns) =>
-    admin.from('event_catalog').select(columns).in('id', eventIds)
-  );
-  if (eventError) {
-    console.error('venue pass events', eventError);
+  const [eventRows, codeRows, proofRows, donationRows] = await Promise.all([
+    selectCatalog((columns) => admin.from('event_catalog').select(columns).in('id', eventIds)),
+    admin.from('event_registrations').select('id,registration_code').in('id', regIds),
+    admin
+      .from('offline_payment_proofs')
+      .select('registration_id,id,utr,screenshot_path,status,created_at')
+      .in('registration_id', regIds)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false }),
+    donationIds.length
+      ? admin.from('donations').select('id,amount_paise,payment_status').in('id', donationIds)
+      : Promise.resolve({ data: [] as { id: string; amount_paise: number; payment_status: string }[], error: null }),
+  ]);
+
+  if (eventRows.error) {
+    console.error('venue pass events', eventRows.error);
     return { status: 500, payload: { passes: [], profile } };
   }
 
   const eventById = new Map<string, EventCatalog>();
-  for (const row of (eventRows || []) as unknown as EventCatalog[]) {
+  for (const row of (eventRows.data || []) as unknown as EventCatalog[]) {
     if (row?.id) eventById.set(String(row.id), row);
   }
 
-  const detailResults = await Promise.all(
-    eventIds.map((eventId) => getAccountRegistrationForEvent(me, eventId, { skipReprice: true, profile }))
+  const codeByReg = new Map<string, string | null>();
+  for (const row of codeRows.data || []) {
+    const id = String((row as { id?: string }).id || '');
+    if (!id) continue;
+    const code = (row as { registration_code?: string | null }).registration_code;
+    codeByReg.set(id, code != null ? String(code) : null);
+  }
+
+  const donationById = new Map<string, DonationSnapshot>();
+  for (const row of donationRows.data || []) {
+    const id = String((row as { id?: string }).id || '');
+    if (!id) continue;
+    donationById.set(id, row as unknown as DonationSnapshot);
+  }
+
+  const pendingByReg = new Map<string, NonNullable<GetAccountRegistrationOpts['pendingProof']>>();
+  for (const row of proofRows.data || []) {
+    const regId = String((row as { registration_id?: string }).registration_id || '');
+    if (!regId || pendingByReg.has(regId)) continue;
+    pendingByReg.set(regId, {
+      id: String((row as { id?: string }).id || ''),
+      utr: typeof (row as { utr?: string }).utr === 'string' ? (row as { utr: string }).utr : null,
+      has_screenshot: Boolean((row as { screenshot_path?: string }).screenshot_path),
+      status: 'pending',
+    });
+  }
+
+  const enriched = await Promise.all(
+    regRows.map((reg) =>
+      enrichRegistrationForClient(admin, me, reg, {
+        profile,
+        readOnly: true,
+        storedCode: codeByReg.get(reg.id) ?? null,
+        donation: reg.donation_id ? donationById.get(reg.donation_id) ?? null : null,
+        pendingProof: pendingByReg.get(reg.id) ?? null,
+      })
+    )
   );
 
-  const passes: VenuePassListItem[] = [];
-  for (let i = 0; i < eventIds.length; i++) {
-    const eventId = eventIds[i];
-    const detail = detailResults[i];
-    const reg = detail.payload.registration as Record<string, unknown> | null | undefined;
-    if (detail.status !== 200 || !reg) continue;
+  const passes: VenuePassListItem[] = regRows.map((reg, index) => {
+    const eventId = String(reg.event_id);
     const catalog = eventById.get(eventId);
-    passes.push({
+    return {
       eventId,
       eventTitle: catalog?.title || 'Event',
       starts_at: catalog?.starts_at || '',
       ends_at: catalog?.ends_at ?? null,
       venue: catalog?.venue || '',
-      registration: reg,
-    });
-  }
+      registration: enriched[index],
+    };
+  });
 
   passes.sort((a, b) => String(a.starts_at).localeCompare(String(b.starts_at)));
 
