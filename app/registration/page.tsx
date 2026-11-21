@@ -263,6 +263,7 @@ function RegistrationPageInner() {
                     setEventError(body.eventError || 'This event is not available for registration.');
                     return;
                 }
+                bootstrappedEventRef.current = eventFromQuery;
                 setEvent(body.event);
                 setEventError('');
 
@@ -322,7 +323,11 @@ function RegistrationPageInner() {
                         profile.email || '',
                         profile.full_name || ''
                     ).then((step) => {
-                        if (active) setCurrentStep((prev) => (prev === 'details' ? step : prev));
+                        if (active) {
+                            setCurrentStep((prev) =>
+                                prev === 'details' || prev === 'phone' ? step : prev
+                            );
+                        }
                     });
                 } else {
                     setUser(null);
@@ -330,7 +335,6 @@ function RegistrationPageInner() {
                     setCurrentStep('phone');
                 }
 
-                bootstrappedEventRef.current = eventFromQuery;
             } catch {
                 if (active) setEventError('Could not load event details.');
             } finally {
@@ -614,6 +618,8 @@ function RegistrationPageInner() {
         if (settled) {
             setPendingProof(null);
             setCurrentStep('success');
+        } else {
+            setCurrentStep('details');
         }
         return {
             id,
@@ -646,9 +652,8 @@ function RegistrationPageInner() {
     }
 
     useEffect(() => {
-        if (bootstrappedEventRef.current && bootstrappedEventRef.current === event?.id) {
-            return;
-        }
+        // ?event= bootstrap API already returns saved registration; do not refetch in parallel.
+        if (eventFromQuery) return;
         if (!user?.id || !event?.id || gate !== 'ok') {
             if (gate === 'admin' || gate === null || !user) setRegHydrated(true);
             return;

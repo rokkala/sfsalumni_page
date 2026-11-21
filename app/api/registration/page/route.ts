@@ -4,7 +4,7 @@ import { selectCatalog } from '@/lib/events/catalog-select';
 import { eventIsOpen } from '@/lib/events/open';
 import { isEventSoftDeleted } from '@/lib/events/soft-delete';
 import type { EventCatalog } from '@/lib/events/types';
-import { getAccountRegistrationForEvent } from '@/lib/events/register';
+import { loadRegistrationForPageLoad } from '@/lib/events/register';
 import { loadMemberBankDetails } from '@/lib/payments/member-bank-details';
 import { createAdminClient } from '@/lib/supabase-admin';
 
@@ -19,9 +19,13 @@ export async function GET(request: Request) {
     }
 
     const admin = createAdminClient();
-    const { data, error } = await selectCatalog((columns) =>
-      admin.from('event_catalog').select(columns).eq('id', eventId).eq('published', true).maybeSingle()
-    );
+    const [catalogResult, me] = await Promise.all([
+      selectCatalog((columns) =>
+        admin.from('event_catalog').select(columns).eq('id', eventId).eq('published', true).maybeSingle()
+      ),
+      getCurrentAccount(),
+    ]);
+    const { data, error } = catalogResult;
     const row = data as unknown as EventCatalog | null;
     if (
       error ||
@@ -34,8 +38,6 @@ export async function GET(request: Request) {
         eventError: 'This event is not available for registration.',
       });
     }
-
-    const me = await getCurrentAccount();
     if (!me) {
       return NextResponse.json({
         event: row,
@@ -64,7 +66,7 @@ export async function GET(request: Request) {
     }
 
     const [regResult, bank] = await Promise.all([
-      getAccountRegistrationForEvent(me, eventId),
+      loadRegistrationForPageLoad(me, eventId),
       loadMemberBankDetails(admin),
     ]);
 
