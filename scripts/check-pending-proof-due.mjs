@@ -63,4 +63,24 @@ const previewDonation = donationDueWithPendingVerification({
 });
 assert(previewDonation === 10_000, 'donation preview delta');
 
+function inferredWithdrawnProofAmountPaise(input) {
+  const proof = Math.max(0, Math.floor(Number(input.proofAmountPaise) || 0));
+  const feeDue = amountDuePaise(
+    Math.max(0, Math.floor(Number(input.feeTotalPaise) || 0)),
+    Math.max(0, Math.floor(Number(input.feePaidPaise) || 0))
+  );
+  const donationDue = Math.max(0, Math.floor(Number(input.donationDuePaise) || 0));
+  return Math.max(proof, feeDue + donationDue);
+}
+
+assert(
+  inferredWithdrawnProofAmountPaise({
+    proofAmountPaise: 0,
+    feeTotalPaise: 300_000,
+    feePaidPaise: 0,
+    donationDuePaise: 500_000,
+  }) === 800_000,
+  'legacy proof without amount_paise still credits full prior due'
+);
+
 console.log('OK pending proof due (fee + donation)');

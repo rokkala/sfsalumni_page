@@ -56,6 +56,49 @@ export function donationDueWithPendingVerification(input: {
     return Math.max(0, previewIntent - savedIntent);
 }
 
+/** Pricing fields that affect fee, donation intent, or proof amount — must match client choicesFingerprint. */
+export function registrationPricingFingerprint(parts: {
+    attending: boolean;
+    lunch: boolean;
+    food_preference: string | null;
+    number_of_guests: number;
+    guests_eating: number;
+    has_parking: boolean;
+    two_wheeler_count: number;
+    four_wheeler_count: number;
+    intended_donation_paise: number;
+    batch: number | null;
+}): string {
+    return [
+        parts.attending,
+        parts.lunch,
+        parts.food_preference ?? '',
+        parts.number_of_guests,
+        parts.guests_eating,
+        parts.has_parking,
+        parts.has_parking ? parts.two_wheeler_count : 0,
+        parts.has_parking ? parts.four_wheeler_count : 0,
+        Math.max(0, Math.floor(Number(parts.intended_donation_paise) || 0)),
+        parts.batch ?? '',
+    ].join('|');
+}
+
+/** Use stored proof amount when present; otherwise at least what was due when the proof was pending. */
+export function inferredWithdrawnProofAmountPaise(input: {
+    proofAmountPaise: number;
+    feeTotalPaise: number;
+    feePaidPaise: number;
+    donationDuePaise: number;
+}): number {
+    const proof = Math.max(0, Math.floor(Number(input.proofAmountPaise) || 0));
+    const feeDue = amountDuePaise(
+        Math.max(0, Math.floor(Number(input.feeTotalPaise) || 0)),
+        Math.max(0, Math.floor(Number(input.feePaidPaise) || 0))
+    );
+    const donationDue = Math.max(0, Math.floor(Number(input.donationDuePaise) || 0));
+    return Math.max(proof, feeDue + donationDue);
+}
+
 /** Apply a withdrawn proof amount to fee first, then donation (same order as mark-paid settle). */
 export function applyWithdrawnRegistrationProofCredit(input: {
     proofAmountPaise: number;

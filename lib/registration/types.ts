@@ -323,5 +323,6 @@ export function choicesFingerprint(data: FormData): string {
         data.has_parking ? data.two_wheeler_count : 0,
         data.has_parking ? data.four_wheeler_count : 0,
         donationIntentPaise(data),
+        data.batch ?? '',
     ].join('|');
 }

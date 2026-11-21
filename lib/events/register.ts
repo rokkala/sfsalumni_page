@@ -59,6 +59,8 @@ import {
   applyWithdrawnRegistrationProofCredit,
   donationDueWithPendingVerification,
   feeDueWithPendingVerification,
+  inferredWithdrawnProofAmountPaise,
+  registrationPricingFingerprint,
 } from '@/lib/registration/pending-proof-due';
 import { withdrawPendingRegistrationProofs } from '@/lib/payments/withdraw-pending-proof';
 import { normalizePhoneNumber, phoneValidationError, splitE164 } from '@/lib/phone';
@@ -164,6 +166,10 @@ type ExistingRow = {
   core_committee_manually_verified: boolean | null;
   attending: boolean;
   lunch: boolean;
+  food_preference: string | null;
+  has_parking: boolean;
+  two_wheeler_count: number;
+  four_wheeler_count: number;
   number_of_guests: number;
   guests_eating: number;
 };
@@ -787,7 +793,7 @@ export async function registerAccountForEvent(
   const { data: existingRaw } = await admin
     .from('event_registrations')
     .select(
-      'id,payment_status,amount_paid_paise,donation_id,core_committee_manually_verified,attending,lunch,number_of_guests,guests_eating'
+      'id,payment_status,amount_paid_paise,donation_id,core_committee_manually_verified,attending,lunch,food_preference,has_parking,two_wheeler_count,four_wheeler_count,number_of_guests,guests_eating'
     )
     .eq('event_id', eventId)
     .eq('account_id', me.id)
@@ -801,19 +807,58 @@ export async function registerAccountForEvent(
         lunch: existing.lunch !== false,
         number_of_guests: existing.number_of_guests,
         guests_eating: existing.guests_eating,
-        batch: feeBatch ?? null,
+        batch: me.batch ?? null,
       }).total_cost_paise
     : 0;
   const priorDonation =
     existing?.donation_id != null ? await loadDonation(admin, existing.donation_id) : null;
   const priorDonationDuePaise = donationDuePaise(priorDonation);
+  const priorPaidBeforeSave = Math.max(0, Number(existing?.amount_paid_paise) || 0);
+
+  const savedPricingFingerprint = existing
+    ? registrationPricingFingerprint({
+        attending: existing.attending === true,
+        lunch: existing.lunch !== false,
+        food_preference: existing.food_preference,
+        number_of_guests: clampGuestCount(Number(existing.number_of_guests) || 0),
+        guests_eating: clampGuestsEating(existing.guests_eating, existing.number_of_guests),
+        has_parking: existing.has_parking === true,
+        two_wheeler_count: clampVehicleCount(existing.two_wheeler_count),
+        four_wheeler_count: clampVehicleCount(existing.four_wheeler_count),
+        intended_donation_paise:
+          priorDonation?.payment_status === 'paid'
+            ? Math.max(0, Number(priorDonation.amount_paise) || 0)
+            : priorDonation
+              ? Math.max(0, Number(priorDonation.amount_paise) || 0)
+              : 0,
+        batch: me.batch ?? null,
+      })
+    : '';
+  const nextPricingFingerprint = registrationPricingFingerprint({
+    attending,
+    lunch: alumnusEats,
+    food_preference: foodPreference,
+    number_of_guests: guestCount,
+    guests_eating: guestsEating,
+    has_parking: hasParking,
+    two_wheeler_count: twoWheelers,
+    four_wheeler_count: fourWheelers,
+    intended_donation_paise: intendedDonationPaise,
+    batch: feeBatch ?? null,
+  });
+  const pricingChoicesChanged = !existing || savedPricingFingerprint !== nextPricingFingerprint;
 
   let withdrawnPendingProof = 0;
   let withdrawnProofAmountPaise = 0;
-  if (existing?.id) {
+  if (existing?.id && pricingChoicesChanged) {
     const withdrawn = await withdrawPendingRegistrationProofs(admin, existing.id);
     withdrawnPendingProof = withdrawn.count;
-    withdrawnProofAmountPaise = withdrawn.amountPaise;
+    withdrawnProofAmountPaise = inferredWithdrawnProofAmountPaise({
+      proofAmountPaise: withdrawn.amountPaise,
+      feeTotalPaise: priorFeeTotalPaise,
+      feePaidPaise: priorPaidBeforeSave,
+      donationDuePaise: priorDonationDuePaise,
+    });
     if (withdrawnPendingProof > 0) {
       await admin
         .from('event_registrations')
@@ -835,15 +880,11 @@ export async function registerAccountForEvent(
   const donationId = donation?.id ?? null;
 
   // The fee's payment status. A ₹0 fee is paid at save; the donation is tracked separately.
-  let priorPaid = Math.max(0, Number(existing?.amount_paid_paise) || 0);
+  let priorPaid = priorPaidBeforeSave;
   let donationDue = donationDuePaise(donation);
   let payment_status = statusFromAmounts(feeTotal, priorPaid);
 
-  if (withdrawnPendingProof > 0) {
-    if (withdrawnProofAmountPaise < 1) {
-      // ponytail: legacy proofs may lack amount_paise — fall back to prior fee + donation due.
-      withdrawnProofAmountPaise = priorFeeTotalPaise + priorDonationDuePaise;
-    }
+  if (withdrawnPendingProof > 0 && withdrawnProofAmountPaise > 0) {
     const credited = applyWithdrawnRegistrationProofCredit({
       proofAmountPaise: withdrawnProofAmountPaise,
       feeTotal,
