@@ -17,6 +17,7 @@ import {
   PAYMENT_PROOFS_BUCKET,
   paymentProofObjectPath,
 } from '@/lib/payments/proof-storage';
+import { loadDonation } from '@/lib/events/mark-paid';
 import { registrationPaymentDuePaise } from '@/lib/events/registration-due';
 import { loadRegistrationForPageLoad } from '@/lib/events/register';
 import { createAdminClient } from '@/lib/supabase-admin';
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
     const { data: reg, error: regErr } = await admin
       .from('event_registrations')
       .select(
-        'id,account_id,event_id,attending,lunch,number_of_guests,guests_eating,total_cost_paise,amount_paid_paise,payment_status,donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status)'
+        'id,account_id,event_id,attending,lunch,number_of_guests,guests_eating,total_cost_paise,amount_paid_paise,payment_status,donation_id,donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status)'
       )
       .eq('id', registrationId)
       .maybeSingle();
@@ -85,7 +86,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Registration not found' }, { status: 404 });
     }
     registrationEventId = String(reg.event_id || '').trim() || null;
-    const donationRow = Array.isArray(reg.donation) ? reg.donation[0] : reg.donation;
+    const donation = await loadDonation(admin, reg.donation_id);
     const due = registrationPaymentDuePaise(
       {
         attending: reg.attending === true,
@@ -95,13 +96,7 @@ export async function POST(request: Request) {
         batch: me.batch,
         amount_paid_paise: reg.amount_paid_paise,
       },
-      donationRow
-        ? {
-            id: String(donationRow.id ?? ''),
-            amount_paise: Number(donationRow.amount_paise) || 0,
-            payment_status: String(donationRow.payment_status ?? 'pending'),
-          }
-        : null
+      donation
     );
     amountPaise = due.totalDuePaise;
     if (amountPaise < 100) {
