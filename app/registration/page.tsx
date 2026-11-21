@@ -75,7 +75,7 @@ import {
     type RegistrationUser,
 } from '@/lib/registration/types';
 
-type PendingProofState = { utr: string | null; hasScreenshot: boolean };
+type PendingProofState = { utr: string | null; hasScreenshot: boolean; amountPaise: number };
 
 /** A saved registration as the server reports it right now. */
 interface LoadedRegistration {
@@ -571,6 +571,10 @@ function RegistrationPageInner() {
                               ? ((rawProof as { utr: string }).utr)
                               : null,
                       hasScreenshot: Boolean((rawProof as { has_screenshot?: unknown }).has_screenshot),
+                      amountPaise: Math.max(
+                          0,
+                          Math.floor(Number((rawProof as { amount_paise?: unknown }).amount_paise) || 0)
+                      ),
                   }
                 : null;
         setRegistrationId(id || null);
@@ -612,8 +616,7 @@ function RegistrationPageInner() {
         }
 
         // Confirmed by the committee, or fully paid: the success screen with the code.
-        const settled =
-            confirmed || (next.paymentStatus === 'paid' && next.totalDuePaise === 0);
+        const settled = confirmed || next.passState === 'verified';
         if (settled) {
             setPendingProof(null);
             setCurrentStep('success');
@@ -999,19 +1002,22 @@ function RegistrationPageInner() {
 
     const formDirty = !savedFingerprint || choicesFingerprint(formData) !== savedFingerprint;
     const donationLocked = money.donationPaymentStatus === 'paid';
-    const isSettled =
-        committeeConfirmed || (money.paymentStatus === 'paid' && money.totalDuePaise === 0);
-    // Do not show “awaiting verification” once the registration is confirmed / paid.
-    const verificationPending = Boolean(pendingProof) && !isSettled;
+    const isSettled = committeeConfirmed || money.passState === 'verified';
+    // Awaiting committee: pending proof and/or pass still in preview (not valid for entry yet).
+    const verificationPending =
+        !isSettled &&
+        (Boolean(pendingProof) || money.passState === 'pending_verification');
     const creditSavedFeeInPreview =
-        (verificationPending ||
-            money.passState === 'pending_verification' ||
-            money.paymentStatus === 'partial' ||
-            money.feePaidPaise > 0) &&
-        !isSettled;
+        verificationPending ||
+        money.passState === 'pending_verification' ||
+        money.paymentStatus === 'partial' ||
+        money.feePaidPaise > 0;
     // Shown amounts: the database figures until the form is edited, then a live preview.
     const displayMoney = formDirty
-        ? previewMoney(money, formData, { creditSavedRegistrationFee: creditSavedFeeInPreview })
+        ? previewMoney(money, formData, {
+              creditSavedRegistrationFee: creditSavedFeeInPreview,
+              pendingProofAmountPaise: pendingProof?.amountPaise ?? 0,
+          })
         : money;
     const [payingOnline, setPayingOnline] = useState(false);
     const busy = saving || payingOnline;

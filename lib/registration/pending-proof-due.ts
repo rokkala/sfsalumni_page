@@ -18,6 +18,25 @@ export function feeDueWithPendingVerification(
     return amountDuePaise(total, Math.max(paid, total));
 }
 
+/** Fee portion of a pending offline proof (proof total may include donation). */
+export function feePortionFromPendingProofAmount(input: {
+    proofAmountPaise: number;
+    feeTotalPaise: number;
+    donationIntendedPaise: number;
+    donationPaymentStatus: string | null | undefined;
+}): number {
+    const proof = Math.max(0, Math.floor(Number(input.proofAmountPaise) || 0));
+    if (proof < 1) return 0;
+    const donationPending =
+        input.donationPaymentStatus !== 'paid' &&
+        input.donationPaymentStatus !== 'failed' &&
+        input.donationIntendedPaise > 0;
+    const feePart = donationPending
+        ? Math.max(0, proof - input.donationIntendedPaise)
+        : proof;
+    return Math.max(0, feePart);
+}
+
 /** Donation still owed; while proof is pending, saved intent is treated as already submitted. */
 export function donationDueWithPendingVerification(input: {
     intendedPaise: number;

@@ -70,10 +70,10 @@ const REG_SELECT =
   'id,event_id,number_of_guests,guests_eating,attending,lunch,food_preference,has_parking,two_wheeler_count,four_wheeler_count,phone_number,payment_status,total_cost_paise,amount_paid_paise,donation_id,core_committee_manually_verified,bank_reference';
 
 /** One PostgREST round-trip: registration + event + donation + pending proofs. */
-const VENUE_PASS_SELECT = `${REG_SELECT},registration_code,event_catalog(id,title,starts_at,ends_at,venue),donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status),offline_payment_proofs(id,utr,screenshot_path,status,created_at)`;
+const VENUE_PASS_SELECT = `${REG_SELECT},registration_code,event_catalog(id,title,starts_at,ends_at,venue),donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status),offline_payment_proofs(id,utr,screenshot_path,status,amount_paise,created_at)`;
 const VENUE_PASS_SELECT_LITE = `${REG_SELECT},registration_code,event_catalog(id,title,starts_at,ends_at,venue),donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status)`;
 
-const REG_PAGE_SELECT = `${REG_SELECT},registration_code,donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status),offline_payment_proofs(id,utr,screenshot_path,status,created_at)`;
+const REG_PAGE_SELECT = `${REG_SELECT},registration_code,donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status),offline_payment_proofs(id,utr,screenshot_path,status,amount_paise,created_at)`;
 const REG_PAGE_SELECT_LITE = `${REG_SELECT},registration_code,donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status)`;
 
 function embedOne<T>(value: T | T[] | null | undefined): T | null {
@@ -99,10 +99,12 @@ function latestPendingProof(
     .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
   const row = pending[0];
   if (!row?.id) return null;
+  const amount = Math.max(0, Math.floor(Number((row as { amount_paise?: number }).amount_paise) || 0));
   return {
     id: String(row.id),
     utr: typeof row.utr === 'string' ? row.utr : null,
     has_screenshot: Boolean(row.screenshot_path),
+    amount_paise: amount > 0 ? amount : undefined,
     status: 'pending',
   };
 }
@@ -230,6 +232,7 @@ type GetAccountRegistrationOpts = {
     id: string;
     utr: string | null;
     has_screenshot: boolean;
+    amount_paise?: number;
     status: 'pending';
   } | null;
 };
@@ -258,17 +261,19 @@ async function enrichRegistrationForClient(
   if (pendingProof === undefined) {
     const { data: pendingProofRows } = await admin
       .from('offline_payment_proofs')
-      .select('id,utr,screenshot_path,status')
+      .select('id,utr,screenshot_path,status,amount_paise')
       .eq('registration_id', reg.id)
       .eq('status', 'pending')
       .order('created_at', { ascending: false })
       .limit(1);
     const pendingProofRow = Array.isArray(pendingProofRows) ? pendingProofRows[0] : null;
+    const proofAmount = Math.max(0, Math.floor(Number(pendingProofRow?.amount_paise) || 0));
     pendingProof = pendingProofRow
       ? {
           id: String(pendingProofRow.id),
           utr: typeof pendingProofRow.utr === 'string' ? pendingProofRow.utr : null,
           has_screenshot: Boolean(pendingProofRow.screenshot_path),
+          amount_paise: proofAmount > 0 ? proofAmount : undefined,
           status: 'pending' as const,
         }
       : null;

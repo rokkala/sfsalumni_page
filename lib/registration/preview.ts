@@ -3,7 +3,10 @@
 // It uses the same fee rule the server uses (getEventCostBreakdown), so the numbers match.
 // The server recalculates on save and again on pay. The preview is never stored or charged.
 
-import { donationDueWithPendingVerification } from '@/lib/registration/pending-proof-due';
+import {
+    donationDueWithPendingVerification,
+    feePortionFromPendingProofAmount,
+} from '@/lib/registration/pending-proof-due';
 import {
     clampGuestCount,
     clampGuestsEating,
@@ -18,6 +21,8 @@ export type PreviewMoneyOptions = {
      * committee review). True when proof is pending, pass is in preview, partial fee paid, etc.
      */
     creditSavedRegistrationFee?: boolean;
+    /** Pending offline proof amount (fee + donation at submit time). */
+    pendingProofAmountPaise?: number;
 };
 
 /** True when the saved registration already has money in flight — preview should show increments only. */
@@ -43,10 +48,19 @@ export function creditedFeePaidPaise(
     const paidRecorded = Math.max(0, saved.feePaidPaise);
     const savedTotal = Math.max(0, saved.feeTotalPaise);
     if (!shouldCreditSavedFeeInPreview(saved, opts)) return paidRecorded;
-    if (previewFeeTotal > savedTotal) {
-        return Math.max(paidRecorded, savedTotal);
+
+    const proofFee = feePortionFromPendingProofAmount({
+        proofAmountPaise: opts?.pendingProofAmountPaise ?? 0,
+        feeTotalPaise: savedTotal,
+        donationIntendedPaise: saved.donationIntendedPaise,
+        donationPaymentStatus: saved.donationPaymentStatus,
+    });
+    const covered = Math.max(paidRecorded, savedTotal, proofFee);
+
+    if (previewFeeTotal > covered) {
+        return covered;
     }
-    return Math.max(paidRecorded, savedTotal);
+    return covered;
 }
 
 /**
