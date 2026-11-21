@@ -8,7 +8,7 @@
 
 'use client';
 
-import { Suspense, useEffect, useState, type FormEvent } from 'react';
+import { Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { COMMITTEE_AUTH_PATH } from '@/lib/jubilee-cta';
 import { createClient } from '@/lib/supabase';
@@ -221,30 +221,138 @@ function RegistrationPageInner() {
     const [hasSavedReg, setHasSavedReg] = useState(false);
     /** False until the saved registration for this event has been fetched (avoids form flash). */
     const [regHydrated, setRegHydrated] = useState(false);
+    const [onlineCheckoutEnabled, setOnlineCheckoutEnabled] = useState(false);
 
     const searchParams = useSearchParams();
     const pathname = usePathname() || '';
+    const eventFromQuery = searchParams.get('event')?.trim() || '';
     const newRegistrationGate =
         pathname === '/new_registration' || pathname.startsWith('/new_registration/');
     const supabase = createClient();
+    const bootstrappedEventRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        if (!eventFromQuery) {
+            bootstrappedEventRef.current = null;
+            return;
+        }
+        let active = true;
+        setLoading(true);
+        setEventLoaded(false);
+        setRegHydrated(false);
+        bootstrappedEventRef.current = null;
+
+        void (async () => {
+            try {
+                const res = await fetch(
+                    `/api/registration/page?eventId=${encodeURIComponent(eventFromQuery)}`,
+                    { cache: 'no-store' }
+                );
+                const body = (await res.json().catch(() => ({}))) as {
+                    event?: EventCatalog | null;
+                    eventError?: string;
+                    member?: AuthProfile | null;
+                    gate?: 'admin' | 'ok';
+                    registration?: { registration?: Record<string, unknown> | null; profile?: RegistrationProfileSnapshot | null };
+                    bank?: { account?: BankAccountPublic | null; online_checkout_available?: boolean };
+                };
+                if (!active) return;
+
+                if (body.eventError || !body.event) {
+                    setEvent(null);
+                    setEventError(body.eventError || 'This event is not available for registration.');
+                    return;
+                }
+                setEvent(body.event);
+                setEventError('');
+
+                if (body.gate === 'admin' && body.member) {
+                    setUser({
+                        id: body.member.id,
+                        email: body.member.email,
+                        role: body.member.role,
+                        jubilee_reg_status: body.member.jubilee_reg_status || 'none',
+                    });
+                    setGate('admin');
+                    return;
+                }
+
+                if (body.member && body.gate === 'ok') {
+                    const profile = body.member;
+                    setUser({
+                        id: profile.id,
+                        email: profile.email,
+                        role: profile.role,
+                        jubilee_reg_status: profile.jubilee_reg_status || 'none',
+                    });
+                    setGate('ok');
+                    setAccountContact({
+                        full_name: profile.full_name || '',
+                        last_name: profile.last_name || '',
+                        email: profile.email || '',
+                        phone_number: profile.phone_number || '',
+                    });
+                    const loc = parseLocation(profile.current_location || '');
+                    setFormData((prev) => ({
+                        ...prev,
+                        batch: profile.batch ?? undefined,
+                        section: profile.section || '',
+                        city: loc.city,
+                        country: loc.country,
+                    }));
+                    if (body.bank) {
+                        setBankAccount(body.bank.account ?? null);
+                        setOnlineCheckoutEnabled(Boolean(body.bank.online_checkout_available));
+                    }
+                    if (body.registration) {
+                        applyRegistrationPayload(body.registration, true);
+                    } else {
+                        setHasSavedReg(false);
+                        setRegistrationId(null);
+                        setRegistrationCode(null);
+                        setUpiPaymentRef(null);
+                        setMoney(EMPTY_MONEY);
+                        setCommitteeConfirmed(false);
+                        setSavedBankReference('');
+                        setPendingProof(null);
+                        setCurrentStep('details');
+                    }
+                    void prefillFromMemberRoster(
+                        profile.phone_number || '',
+                        profile.email || '',
+                        profile.full_name || ''
+                    ).then((step) => {
+                        if (active) setCurrentStep((prev) => (prev === 'details' ? step : prev));
+                    });
+                } else {
+                    setUser(null);
+                    setGate(null);
+                    setCurrentStep('phone');
+                }
+
+                bootstrappedEventRef.current = eventFromQuery;
+            } catch {
+                if (active) setEventError('Could not load event details.');
+            } finally {
+                if (active) {
+                    setEventLoaded(true);
+                    setRegHydrated(true);
+                    setLoading(false);
+                }
+            }
+        })();
+
+        return () => {
+            active = false;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [eventFromQuery]);
 
     useEffect(() => {
         async function loadEvent() {
-            const fromQuery = searchParams.get('event');
+            if (eventFromQuery) return;
             setEventLoaded(false);
             try {
-                if (fromQuery) {
-                    const res = await fetch(`/api/events/${fromQuery}`, { cache: 'no-store' });
-                    const row = res.ok ? ((await res.json()) as EventCatalog) : null;
-                    if (!row || !eventIsOpen(row, new Date())) {
-                        setEvent(null);
-                        setEventError('This event is not available for registration.');
-                        return;
-                    }
-                    setEvent(row);
-                    setEventError('');
-                    return;
-                }
                 const listRes = await fetch('/api/events', { cache: 'no-store' });
                 if (!listRes.ok) {
                     setEventError('Events are not available yet.');
@@ -259,27 +367,26 @@ function RegistrationPageInner() {
                     return;
                 }
                 if (!chosen) {
-                    // Several events: load which ones this alumni already registered for.
-                    const regs: Record<string, EventRegistrationHint | null> = {};
-                    for (const row of list) {
-                        try {
-                            const regRes = await fetch(
-                                `/api/registration/event?eventId=${encodeURIComponent(row.id)}`,
-                                { cache: 'no-store' }
-                            );
-                            if (regRes.ok) {
-                                const body = (await regRes.json()) as {
-                                    registration?: EventRegistrationHint | null;
-                                };
-                                regs[row.id] = body.registration ?? null;
-                            } else {
-                                regs[row.id] = null;
+                    const entries = await Promise.all(
+                        list.map(async (row) => {
+                            try {
+                                const regRes = await fetch(
+                                    `/api/registration/event?eventId=${encodeURIComponent(row.id)}`,
+                                    { cache: 'no-store' }
+                                );
+                                if (regRes.ok) {
+                                    const body = (await regRes.json()) as {
+                                        registration?: EventRegistrationHint | null;
+                                    };
+                                    return [row.id, body.registration ?? null] as const;
+                                }
+                            } catch {
+                                /* fall through */
                             }
-                        } catch {
-                            regs[row.id] = null;
-                        }
-                    }
-                    setChoiceRegs(regs);
+                            return [row.id, null] as const;
+                        })
+                    );
+                    setChoiceRegs(Object.fromEntries(entries));
                     setEvent(null);
                     setEventError('');
                     return;
@@ -293,7 +400,7 @@ function RegistrationPageInner() {
             }
         }
         void loadEvent();
-    }, [searchParams]);
+    }, [searchParams, eventFromQuery]);
 
     function applyRosterPrefill(match: PreRegistrationData) {
         const loc = parseLocation(match.current_location || '');
@@ -369,6 +476,8 @@ function RegistrationPageInner() {
     }
 
     useEffect(() => {
+        if (eventFromQuery) return;
+
         async function checkAuth() {
             try {
                 const res = await fetch('/api/auth/me');
@@ -420,29 +529,19 @@ function RegistrationPageInner() {
         void checkAuth();
         // Runs once on mount; the prefill helper is recreated each render but only used here.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [eventFromQuery]);
 
     useEffect(() => {
         if (gate === 'admin') router.replace(COMMITTEE_AUTH_PATH);
     }, [gate, router]);
 
-    /**
-     * Reads the saved registration and its server-calculated amounts. Used on load, after a save,
-     * and after a payment. Returns null when there is no open registration for this event.
-     */
-    async function loadSavedRegistration(
-        eventId: string,
-        applyToForm: boolean
-    ): Promise<LoadedRegistration | null> {
-        const res = await fetch(`/api/registration/event?eventId=${encodeURIComponent(eventId)}`, {
-            cache: 'no-store',
-        });
-        if (!res.ok) return null;
-
-        const payload = (await res.json().catch(() => ({}))) as {
+    function applyRegistrationPayload(
+        payload: {
             registration?: Record<string, unknown> | null;
             profile?: RegistrationProfileSnapshot | null;
-        };
+        },
+        applyToForm: boolean
+    ): LoadedRegistration | null {
         const reg = payload.registration;
         if (!reg) {
             setHasSavedReg(false);
@@ -527,7 +626,29 @@ function RegistrationPageInner() {
         };
     }
 
+    /**
+     * Reads the saved registration and its server-calculated amounts. Used on load, after a save,
+     * and after a payment. Returns null when there is no open registration for this event.
+     */
+    async function loadSavedRegistration(
+        eventId: string,
+        applyToForm: boolean
+    ): Promise<LoadedRegistration | null> {
+        const res = await fetch(`/api/registration/event?eventId=${encodeURIComponent(eventId)}`, {
+            cache: 'no-store',
+        });
+        if (!res.ok) return null;
+        const payload = (await res.json().catch(() => ({}))) as {
+            registration?: Record<string, unknown> | null;
+            profile?: RegistrationProfileSnapshot | null;
+        };
+        return applyRegistrationPayload(payload, applyToForm);
+    }
+
     useEffect(() => {
+        if (bootstrappedEventRef.current && bootstrappedEventRef.current === event?.id) {
+            return;
+        }
         if (!user?.id || !event?.id || gate !== 'ok') {
             if (gate === 'admin' || gate === null || !user) setRegHydrated(true);
             return;
@@ -545,6 +666,9 @@ function RegistrationPageInner() {
     }, [user?.id, event?.id, gate]);
 
     useEffect(() => {
+        if (bootstrappedEventRef.current && eventFromQuery) {
+            return;
+        }
         if (!user?.id || gate !== 'ok') {
             setBankAccount(null);
             setOnlineCheckoutEnabled(false);
@@ -568,7 +692,7 @@ function RegistrationPageInner() {
         return () => {
             cancel = true;
         };
-    }, [user?.id, gate]);
+    }, [user?.id, gate, eventFromQuery]);
 
     /**
      * Checks the form fields and the account contact. Returns the account's phone in E.164 for saving.
@@ -855,7 +979,6 @@ function RegistrationPageInner() {
     // Do not show “awaiting verification” once the registration is confirmed / paid.
     const verificationPending = Boolean(pendingProof) && !isSettled;
     const [payingOnline, setPayingOnline] = useState(false);
-    const [onlineCheckoutEnabled, setOnlineCheckoutEnabled] = useState(false);
     const busy = saving || payingOnline;
 
     /** Cashfree redirect returnUrl (?cf_order_id=) — same verify path as modal checkout. */
