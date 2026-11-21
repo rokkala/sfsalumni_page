@@ -63,6 +63,68 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 const REG_SELECT =
   'id,event_id,number_of_guests,guests_eating,attending,lunch,food_preference,has_parking,two_wheeler_count,four_wheeler_count,phone_number,payment_status,total_cost_paise,amount_paid_paise,donation_id,core_committee_manually_verified,bank_reference';
 
+/** One PostgREST round-trip: registration + event + donation + pending proofs. */
+const VENUE_PASS_SELECT = `${REG_SELECT},registration_code,event_catalog(id,title,starts_at,ends_at,venue),donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status),offline_payment_proofs(id,utr,screenshot_path,status,created_at)`;
+const VENUE_PASS_SELECT_LITE = `${REG_SELECT},registration_code,event_catalog(id,title,starts_at,ends_at,venue),donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status)`;
+
+function embedOne<T>(value: T | T[] | null | undefined): T | null {
+  if (value == null) return null;
+  return (Array.isArray(value) ? value[0] : value) ?? null;
+}
+
+function latestPendingProof(
+  rows:
+    | {
+        id?: string;
+        utr?: string | null;
+        screenshot_path?: string | null;
+        status?: string;
+        created_at?: string;
+      }[]
+    | null
+    | undefined
+): GetAccountRegistrationOpts['pendingProof'] {
+  if (!rows?.length) return null;
+  const pending = rows
+    .filter((row) => row.status === 'pending')
+    .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  const row = pending[0];
+  if (!row?.id) return null;
+  return {
+    id: String(row.id),
+    utr: typeof row.utr === 'string' ? row.utr : null,
+    has_screenshot: Boolean(row.screenshot_path),
+    status: 'pending',
+  };
+}
+
+function splitVenuePassRow(raw: Record<string, unknown>): {
+  reg: RegistrationRow;
+  storedCode: string | null;
+  catalog: Pick<EventCatalog, 'id' | 'title' | 'starts_at' | 'ends_at' | 'venue'> | null;
+  donation: DonationSnapshot | null;
+  pendingProof: GetAccountRegistrationOpts['pendingProof'];
+} {
+  const { event_catalog, donation, offline_payment_proofs, registration_code, ...rest } = raw;
+  const proofList = Array.isArray(offline_payment_proofs)
+    ? offline_payment_proofs
+    : offline_payment_proofs
+      ? [offline_payment_proofs]
+      : [];
+  return {
+    reg: rest as unknown as RegistrationRow,
+    storedCode: registration_code != null ? String(registration_code) : null,
+    catalog: embedOne(
+      event_catalog as
+        | Pick<EventCatalog, 'id' | 'title' | 'starts_at' | 'ends_at' | 'venue'>
+        | Pick<EventCatalog, 'id' | 'title' | 'starts_at' | 'ends_at' | 'venue'>[]
+        | null
+    ),
+    donation: embedOne(donation as DonationSnapshot | DonationSnapshot[] | null),
+    pendingProof: latestPendingProof(proofList as Parameters<typeof latestPendingProof>[0]),
+  };
+}
+
 type RegistrationRow = {
   id: string;
   event_id: string;
@@ -463,18 +525,22 @@ export async function listAccountVenuePasses(
   }
 
   const admin = createAdminClient();
+  const profile = profilePayload(me);
 
-  const [profile, regsResult] = await Promise.all([
-    loadAccountProfile(admin, me),
+  const baseQuery = (select: string) =>
     admin
       .from('event_registrations')
-      .select(REG_SELECT)
+      .select(select)
       .eq('account_id', me.id)
-      .in('payment_status', [...OPEN_PAYMENT_STATUSES]),
-  ]);
+      .in('payment_status', [...OPEN_PAYMENT_STATUSES]);
 
+  let regsResult = await baseQuery(VENUE_PASS_SELECT);
   if (regsResult.error) {
     console.error('venue pass list', regsResult.error);
+    regsResult = await baseQuery(VENUE_PASS_SELECT_LITE);
+  }
+  if (regsResult.error) {
+    console.error('venue pass list lite', regsResult.error);
     return {
       status: 500,
       payload: {
@@ -484,92 +550,31 @@ export async function listAccountVenuePasses(
     };
   }
 
-  const regRows = (regsResult.data || []) as unknown as RegistrationRow[];
-  if (!regRows.length) {
+  const rows = (regsResult.data || []) as unknown as Record<string, unknown>[];
+  if (!rows.length) {
     return { status: 200, payload: { passes: [], profile } };
   }
 
-  const regIds = regRows.map((r) => r.id);
-  const eventIds = [...new Set(regRows.map((r) => String(r.event_id).trim()).filter(Boolean))];
-  const donationIds = [
-    ...new Set(regRows.map((r) => r.donation_id).filter((id): id is string => Boolean(id))),
-  ];
-
-  const [eventRows, codeRows, proofRows, donationRows] = await Promise.all([
-    selectCatalog((columns) => admin.from('event_catalog').select(columns).in('id', eventIds)),
-    admin.from('event_registrations').select('id,registration_code').in('id', regIds),
-    admin
-      .from('offline_payment_proofs')
-      .select('registration_id,id,utr,screenshot_path,status,created_at')
-      .in('registration_id', regIds)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false }),
-    donationIds.length
-      ? admin.from('donations').select('id,amount_paise,payment_status').in('id', donationIds)
-      : Promise.resolve({ data: [] as { id: string; amount_paise: number; payment_status: string }[], error: null }),
-  ]);
-
-  if (eventRows.error) {
-    console.error('venue pass events', eventRows.error);
-    return { status: 500, payload: { passes: [], profile } };
-  }
-
-  const eventById = new Map<string, EventCatalog>();
-  for (const row of (eventRows.data || []) as unknown as EventCatalog[]) {
-    if (row?.id) eventById.set(String(row.id), row);
-  }
-
-  const codeByReg = new Map<string, string | null>();
-  for (const row of codeRows.data || []) {
-    const id = String((row as { id?: string }).id || '');
-    if (!id) continue;
-    const code = (row as { registration_code?: string | null }).registration_code;
-    codeByReg.set(id, code != null ? String(code) : null);
-  }
-
-  const donationById = new Map<string, DonationSnapshot>();
-  for (const row of donationRows.data || []) {
-    const id = String((row as { id?: string }).id || '');
-    if (!id) continue;
-    donationById.set(id, row as unknown as DonationSnapshot);
-  }
-
-  const pendingByReg = new Map<string, NonNullable<GetAccountRegistrationOpts['pendingProof']>>();
-  for (const row of proofRows.data || []) {
-    const regId = String((row as { registration_id?: string }).registration_id || '');
-    if (!regId || pendingByReg.has(regId)) continue;
-    pendingByReg.set(regId, {
-      id: String((row as { id?: string }).id || ''),
-      utr: typeof (row as { utr?: string }).utr === 'string' ? (row as { utr: string }).utr : null,
-      has_screenshot: Boolean((row as { screenshot_path?: string }).screenshot_path),
-      status: 'pending',
+  const passes: VenuePassListItem[] = [];
+  for (const raw of rows) {
+    const { reg, storedCode, catalog, donation, pendingProof } = splitVenuePassRow(raw);
+    const registration = await enrichRegistrationForClient(admin, me, reg, {
+      profile,
+      readOnly: true,
+      storedCode,
+      donation,
+      pendingProof,
     });
-  }
-
-  const enriched = await Promise.all(
-    regRows.map((reg) =>
-      enrichRegistrationForClient(admin, me, reg, {
-        profile,
-        readOnly: true,
-        storedCode: codeByReg.get(reg.id) ?? null,
-        donation: reg.donation_id ? donationById.get(reg.donation_id) ?? null : null,
-        pendingProof: pendingByReg.get(reg.id) ?? null,
-      })
-    )
-  );
-
-  const passes: VenuePassListItem[] = regRows.map((reg, index) => {
     const eventId = String(reg.event_id);
-    const catalog = eventById.get(eventId);
-    return {
+    passes.push({
       eventId,
       eventTitle: catalog?.title || 'Event',
       starts_at: catalog?.starts_at || '',
       ends_at: catalog?.ends_at ?? null,
       venue: catalog?.venue || '',
-      registration: enriched[index],
-    };
-  });
+      registration,
+    });
+  }
 
   passes.sort((a, b) => String(a.starts_at).localeCompare(String(b.starts_at)));
 
