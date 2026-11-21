@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { prefetchVenuePasses } from '@/lib/client/venue-pass-prefetch';
+import { MEMBER_HOME_OUTSIDE, useMemberHomeBootstrap } from '@/components/member-home-bootstrap';
 
 type Me = {
   id: string;
@@ -27,10 +28,37 @@ export default function MemberGate({
   const loginHref = loginNext
     ? `/login?next=${encodeURIComponent(loginNext)}`
     : '/login';
+  const homeBundle = useMemberHomeBootstrap();
   const [state, setState] = useState('loading');
   const [busy, setBusy] = useState(false);
 
+  function gateStateFromMe(data: Me): string {
+    if (mode === 'admin') {
+      return data.role === 'admin' && data.member_status === 'verified' ? 'allowed' : 'forbidden';
+    }
+    if (data.member_status === 'rejected' || data.member_status === 'suspended') {
+      return 'rejected';
+    }
+    if (mode === 'signed-in' || data.member_status === 'verified' || data.member_status === 'pending') {
+      return 'allowed';
+    }
+    return 'pending';
+  }
+
   useEffect(() => {
+    if (homeBundle !== MEMBER_HOME_OUTSIDE) {
+      if (homeBundle === undefined) {
+        setState('loading');
+        return;
+      }
+      if (!homeBundle) {
+        setState('signed-out');
+        return;
+      }
+      setState(gateStateFromMe(homeBundle.member));
+      return;
+    }
+
     let active = true;
     (async () => {
       try {
@@ -46,21 +74,8 @@ export default function MemberGate({
           return;
         }
         const data = (await res.json()) as Me;
-        if (mode === 'admin') {
-          setState(
-            data.role === 'admin' && data.member_status === 'verified' ? 'allowed' : 'forbidden'
-          );
-        } else if (data.member_status === 'rejected' || data.member_status === 'suspended') {
-          setState('rejected');
-        } else if (
-          mode === 'signed-in' ||
-          data.member_status === 'verified' ||
-          data.member_status === 'pending'
-        ) {
-          setState('allowed');
-        } else {
-          setState('pending');
-        }
+        if (!active) return;
+        setState(gateStateFromMe(data));
       } catch {
         if (active) setState('setup');
       }
@@ -68,7 +83,7 @@ export default function MemberGate({
     return () => {
       active = false;
     };
-  }, [mode]);
+  }, [mode, homeBundle]);
 
   // Keep signed-out users on /admin-app so Add to Home Screen / Install uses
   // that URL + ops manifest (auto-redirect to /login installed the alumni app).

@@ -15,6 +15,11 @@ import { registrationPath } from '@/lib/events/choose-event';
 import { venuePassSummary } from '@/lib/events/venue-pass';
 import { passStatusBadge, venuePassPaymentCue, type VenuePassState } from '@/lib/payments/offline-proof';
 import { prefetchVenuePasses } from '@/lib/client/venue-pass-prefetch';
+import {
+  useMemberHomeBootstrap,
+  MEMBER_HOME_OUTSIDE,
+  type MemberHomeVenuePasses,
+} from '@/components/member-home-bootstrap';
 
 /** One saved registration as GET /api/registration/event returns it. */
 type Registration = {
@@ -70,12 +75,48 @@ function whenLabel(starts: string, ends?: string | null): string {
   return end && end !== start ? `${start} – ${end}` : start;
 }
 
+function phaseFromVenuePasses(payload: VenuePassesResponse | MemberHomeVenuePasses): {
+  passes: Loaded[];
+  phase: 'loading' | 'ready' | 'empty' | 'hidden';
+} {
+  if (payload.hideVenuePass) {
+    return { passes: [], phase: 'hidden' };
+  }
+  const rows = Array.isArray(payload.passes) ? payload.passes : [];
+  const name = String(payload.profile?.full_name || '');
+  const loaded: Loaded[] = rows.map((row) => ({
+    eventId: row.eventId,
+    eventTitle: row.eventTitle,
+    when: whenLabel(row.starts_at, row.ends_at),
+    venue: row.venue || '',
+    name,
+    registration: row.registration as Registration,
+  }));
+  return { passes: loaded, phase: loaded.length ? 'ready' : 'empty' };
+}
+
 export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pass-only' }) {
   const passOnly = mode === 'pass-only';
+  const homeBundle = useMemberHomeBootstrap();
   const [passes, setPasses] = useState<Loaded[]>([]);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'empty' | 'hidden'>('loading');
 
   useEffect(() => {
+    if (homeBundle !== MEMBER_HOME_OUTSIDE) {
+      if (homeBundle === undefined) {
+        setPhase('loading');
+        return;
+      }
+      if (!homeBundle) {
+        setPhase('hidden');
+        return;
+      }
+      const next = phaseFromVenuePasses(homeBundle.venuePasses);
+      setPasses(next.passes);
+      setPhase(next.phase);
+      return;
+    }
+
     let active = true;
     (async () => {
       try {
@@ -90,23 +131,10 @@ export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pa
           return;
         }
         const payload = (await res.json()) as VenuePassesResponse;
-        if (payload.hideVenuePass) {
-          setPhase('hidden');
-          return;
-        }
-        const rows = Array.isArray(payload.passes) ? payload.passes : [];
-        const name = String(payload.profile?.full_name || '');
-        const loaded: Loaded[] = rows.map((row) => ({
-          eventId: row.eventId,
-          eventTitle: row.eventTitle,
-          when: whenLabel(row.starts_at, row.ends_at),
-          venue: row.venue || '',
-          name,
-          registration: row.registration,
-        }));
+        const next = phaseFromVenuePasses(payload);
         if (!active) return;
-        setPasses(loaded);
-        setPhase(loaded.length ? 'ready' : 'empty');
+        setPasses(next.passes);
+        setPhase(next.phase);
       } catch {
         if (active) setPhase('hidden');
       }
@@ -114,7 +142,7 @@ export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pa
     return () => {
       active = false;
     };
-  }, []);
+  }, [homeBundle]);
 
   if (phase === 'hidden') {
     if (!passOnly) return null;

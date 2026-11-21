@@ -10,6 +10,7 @@ import {
   type PortalMenuFlags,
   type PortalNavLink,
 } from '@/lib/portal-menu/menu';
+import { MEMBER_HOME_OUTSIDE, useMemberHomeBootstrap } from '@/components/member-home-bootstrap';
 
 const baseLinks: PortalNavLink[] = [
   { href: '/member', label: 'Home' },
@@ -41,12 +42,22 @@ export default function PortalShell({
   sidebar?: boolean;
 }) {
   const path = usePathname() || '';
+  const homeBundle = useMemberHomeBootstrap();
   const [isAdmin, setIsAdmin] = useState(false);
   const [getAppOpen, setGetAppOpen] = useState(false);
   const [menu, setMenu] = useState<PortalMenuFlags>(DAY1_PORTAL_MENU);
 
   useEffect(() => {
     if (!sidebar) return;
+    if (homeBundle !== MEMBER_HOME_OUTSIDE) {
+      if (homeBundle === undefined) return;
+      if (homeBundle) {
+        setMenu(homeBundle.menu);
+        setIsAdmin(homeBundle.member.role === 'admin' && homeBundle.member.member_status === 'verified');
+      }
+      return;
+    }
+
     let active = true;
     (async () => {
       try {
@@ -70,7 +81,7 @@ export default function PortalShell({
     return () => {
       active = false;
     };
-  }, [sidebar]);
+  }, [sidebar, homeBundle]);
 
   const filtered = filterPortalNavLinks(baseLinks, menu);
   const links = isAdmin ? [...filtered, { href: '/admin', label: 'Admin' }] : filtered;

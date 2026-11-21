@@ -7,6 +7,7 @@ import {
   homeLanesVisible,
   type PortalMenuFlags,
 } from '@/lib/portal-menu/menu';
+import { MEMBER_HOME_OUTSIDE, useMemberHomeBootstrap } from '@/components/member-home-bootstrap';
 
 /** Events stays in the sidebar only — not repeated as a home card. */
 const lanes: { href: string; title: string; body: string; icon: string; flag?: keyof PortalMenuFlags }[] =
@@ -21,10 +22,21 @@ const lanes: { href: string; title: string; body: string; icon: string; flag?: k
   ];
 
 export default function HomeDestinationLanes() {
+  const homeBundle = useMemberHomeBootstrap();
   const [menu, setMenu] = useState<PortalMenuFlags>(DAY1_PORTAL_MENU);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    if (homeBundle !== MEMBER_HOME_OUTSIDE) {
+      if (homeBundle === undefined) {
+        setReady(false);
+        return;
+      }
+      if (homeBundle) setMenu(homeBundle.menu);
+      setReady(true);
+      return;
+    }
+
     let active = true;
     (async () => {
       try {
@@ -41,7 +53,7 @@ export default function HomeDestinationLanes() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [homeBundle]);
 
   if (!ready || !homeLanesVisible(menu)) return null;
 

@@ -5,39 +5,32 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
 import HomeDestinationLanes from '@/components/home-destination-lanes';
 import MemberGate from '@/components/member-gate';
+import {
+  MemberHomeBootstrapProvider,
+  useMemberHomeBootstrap,
+  MEMBER_HOME_OUTSIDE,
+} from '@/components/member-home-bootstrap';
 import MemberPaymentHistory from '@/components/member-payment-history';
 import MemberVenuePass from '@/components/member-venue-pass';
 import PortalShell from '@/components/portal-shell';
 import { firstNameFromFullName } from '@/lib/portal/welcome';
 
-export default function MemberPage() {
-  const [firstName, setFirstName] = useState('friend');
-  const [batch, setBatch] = useState<number | null>(null);
-  const [welcomeReady, setWelcomeReady] = useState(false);
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const meRes = await fetch('/api/auth/me', { cache: 'no-store' });
-        if (!active || !meRes.ok) return;
-        const me = await meRes.json();
-        if (!active) return;
-        setFirstName(firstNameFromFullName(String(me.full_name || '')));
-        setBatch(typeof me.batch === 'number' ? me.batch : me.batch != null ? Number(me.batch) || null : null);
-        const status = String(me.member_status || '');
-        const blocked = status === 'rejected' || status === 'suspended';
-        if (!blocked) setWelcomeReady(true);
-      } catch {
-        /* keep defaults */
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, []);
+function MemberPageInner() {
+  const homeBundle = useMemberHomeBootstrap();
+  const member = homeBundle !== MEMBER_HOME_OUTSIDE && homeBundle ? homeBundle.member : null;
+  const welcomeReady =
+    member &&
+    member.member_status !== 'rejected' &&
+    member.member_status !== 'suspended';
+  const firstName = member ? firstNameFromFullName(String(member.full_name || '')) : 'friend';
+  const batch =
+    member && typeof member.batch === 'number'
+      ? member.batch
+      : member?.batch != null
+        ? Number(member.batch) || null
+        : null;
 
   return (
     <PortalShell title="My home" intro="Your venue pass and next step live here.">
@@ -60,5 +53,13 @@ export default function MemberPage() {
         <HomeDestinationLanes />
       </MemberGate>
     </PortalShell>
+  );
+}
+
+export default function MemberPage() {
+  return (
+    <MemberHomeBootstrapProvider>
+      <MemberPageInner />
+    </MemberHomeBootstrapProvider>
   );
 }

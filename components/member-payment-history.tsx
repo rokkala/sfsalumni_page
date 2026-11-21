@@ -2,16 +2,33 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { MEMBER_HOME_OUTSIDE, useMemberHomeBootstrap } from '@/components/member-home-bootstrap';
 
 type Reg = { id: string; registration_code: string | null; payment_status: string; event_title: string };
 type Don = { id: string; amount_paise: number; payment_status: string; cause_title: string };
 
 export default function MemberPaymentHistory() {
+  const homeBundle = useMemberHomeBootstrap();
   const [regs, setRegs] = useState<Reg[]>([]);
   const [dons, setDons] = useState<Don[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (homeBundle !== MEMBER_HOME_OUTSIDE) {
+      if (homeBundle === undefined) {
+        setLoading(true);
+        return;
+      }
+      if (!homeBundle) {
+        setLoading(false);
+        return;
+      }
+      setRegs(homeBundle.transactions.registrations || []);
+      setDons(homeBundle.transactions.donations || []);
+      setLoading(false);
+      return;
+    }
+
     let active = true;
     (async () => {
       try {
@@ -27,7 +44,7 @@ export default function MemberPaymentHistory() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [homeBundle]);
 
   if (loading) return null;
   if (regs.length === 0 && dons.length === 0) return null;
