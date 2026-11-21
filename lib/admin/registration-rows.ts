@@ -80,6 +80,20 @@ export async function refreshRegistrations(eventId: string): Promise<void> {
     await issueMissingPaidCodes(admin as unknown as RegistrationCodeAdmin);
 }
 
+export async function loadRegistrationById(
+    registrationId: string
+): Promise<{ row: RegistrationDbRow | null; error: string | null }> {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+        .from('event_registrations')
+        .select(REGISTRATION_SELECT)
+        .eq('id', registrationId)
+        .maybeSingle();
+    if (error) return { row: null, error: error.message };
+    if (!data) return { row: null, error: null };
+    return { row: data as unknown as RegistrationDbRow, error: null };
+}
+
 export async function loadRegistrationRows(
     eventId: string
 ): Promise<{ rows: RegistrationDbRow[]; error: string | null }> {

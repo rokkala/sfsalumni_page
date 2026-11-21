@@ -5,10 +5,13 @@ import { useEffect, useState } from 'react';
 export default function RegistrationQr({
   code,
   payload,
+  preview = false,
 }: {
   code: string;
   /** Signed scan value; defaults to code. */
   payload?: string | null;
+  /** Muted styling when payment is not yet verified for entry. */
+  preview?: boolean;
 }) {
   const [src, setSrc] = useState('');
   const scanValue = String(payload || code).trim();
@@ -36,10 +39,14 @@ export default function RegistrationQr({
   return (
     <img
       src={src}
-      alt={`QR code for registration ${code}`}
+      alt={
+        preview
+          ? `Preview QR for registration ${code} — not valid for venue entry yet`
+          : `QR code for registration ${code}`
+      }
       width={220}
       height={220}
-      className="rounded-lg bg-white p-2"
+      className={`rounded-lg bg-white p-2 ${preview ? 'opacity-60 grayscale' : ''}`}
     />
   );
 }

@@ -17,6 +17,7 @@ import {
   PENDING_PROOF_LOCK_MESSAGE,
   SCREENSHOT_BANK_REFERENCE,
   bankReferenceFromProof,
+  passStateFromRegistration,
   pendingPaymentMemberLabel,
   pendingProofDisplay,
   REGISTRATION_DONATION_ONLY_THANKS,
@@ -240,7 +241,7 @@ if (
     pendingProof: true,
     bankReference: 'x',
     totalDuePaise: 0,
-  }) !== 'paid'
+  }) !== 'Payment verified'
 ) {
   throw new Error('status paid wins');
 }
@@ -266,6 +267,45 @@ if (!PENDING_PROOF_LOCK_MESSAGE.includes('pending committee review')) {
 if (pendingPaymentMemberLabel(false) !== 'Complete payment') {
   throw new Error('cta unpaid');
 }
+if (passStateFromRegistration({
+  venuePass: true,
+  paymentStatus: 'pending',
+  totalDuePaise: 50000,
+  pendingOfflineProof: true,
+}) !== 'pending_verification') {
+  throw new Error('pass pending verification');
+}
+if (
+  passStateFromRegistration({
+    venuePass: true,
+    paymentStatus: 'paid',
+    totalDuePaise: 0,
+    pendingOfflineProof: false,
+  }) !== 'verified'
+) {
+  throw new Error('pass verified');
+}
+if (
+  passStateFromRegistration({
+    venuePass: false,
+    paymentStatus: 'pending',
+    totalDuePaise: 0,
+    pendingOfflineProof: true,
+  }) !== 'none'
+) {
+  throw new Error('pass none donation-only');
+}
+if (
+  passStateFromRegistration({
+    venuePass: true,
+    paymentStatus: 'pending',
+    totalDuePaise: 50000,
+    pendingOfflineProof: false,
+  }) !== 'payment_required'
+) {
+  throw new Error('pass payment required');
+}
+
 if (pendingPaymentMemberLabel(true) !== 'Awaiting confirmation') {
   throw new Error('cta awaiting');
 }

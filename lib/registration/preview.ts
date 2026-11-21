@@ -49,6 +49,9 @@ export function previewMoney(saved: RegistrationMoney, form: FormData): Registra
         paymentStatus: saved.paymentStatus,
         registrationCode: saved.registrationCode,
         registrationQr: saved.registrationQr,
+        passState: saved.passState,
+        previewRegistrationCode: saved.previewRegistrationCode,
+        previewRegistrationQr: saved.previewRegistrationQr,
         eventFeePaymentLabel: saved.eventFeePaymentLabel,
     };
 }

@@ -139,7 +139,7 @@ export default function BankStatementModal({
     }
     const picks = autoSelectLineKeys(list);
     setSelected(picks);
-    setClearingBatch(new Set(picks.keys()));
+    setClearingBatch(new Set());
     const firstMember = list.find((r) => r.credit.kind === 'credit');
     setActiveCreditId(firstMember?.credit.credit_id ?? null);
     return true;
@@ -157,7 +157,7 @@ export default function BankStatementModal({
       lastFileRef.current = file;
       const ok = await parseStatementFile(file);
       if (ok) {
-        setReviewFilter('open');
+        setReviewFilter('all');
         setStep('review');
       }
     } finally {
@@ -277,15 +277,15 @@ export default function BankStatementModal({
       <header className="flex shrink-0 items-start justify-between gap-3">
         <div className="space-y-2">
           <p className="text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">
-            Open item clearing · {STEP_LABELS[step]}
+            Bank reconciliation · {STEP_LABELS[step]}
           </p>
           <h3 id={titleId} className="text-headline-sm text-primary">
-            {step === 'upload' ? 'Import bank statement' : 'Bank credit open item ledger'}
+            {step === 'upload' ? 'Import bank statement' : 'Match deposits to registrations'}
           </h3>
           <p className="max-w-2xl text-body-sm text-on-surface-variant">
             {step === 'upload'
-              ? 'Credits post to the ledger as open items until you clear them against receivables and approve the batch.'
-              : 'Assign receivable open items, tick Batch to clear, then post the batch.'}
+              ? 'Upload the South Indian Bank PDF. We list each deposit and suggest a registration match.'
+              : 'Work through each deposit card. Link the right alumni, tick Mark paid, then approve at the bottom.'}
           </p>
         </div>
         <ModalCloseButton disabled={busy} onClick={cancelWithoutApply} />
@@ -410,7 +410,7 @@ export default function BankStatementModal({
               onClick={() => void approveReconciliation()}
               className="cursor-pointer rounded-lg bg-primary px-6 py-2.5 text-label-sm font-bold text-on-primary shadow-sm disabled:opacity-50"
             >
-              {busy ? 'Posting…' : `Post clearing batch (${approveCount})`}
+              {busy ? 'Posting…' : `Mark selected as paid (${approveCount})`}
             </button>
           </footer>
         </>

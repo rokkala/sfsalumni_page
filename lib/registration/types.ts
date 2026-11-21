@@ -3,6 +3,8 @@
 // UI can both import it. Money is never computed here: the server returns every amount, and this
 // file only stores and formats what it was given.
 
+import type { VenuePassState } from '@/lib/payments/offline-proof';
+
 import { COUNTRIES } from '@/lib/countries';
 import { normalizeFoodPreference, type FoodPreference } from '@/lib/registration/registration';
 import { batchYears } from '@/lib/registration/registration-fields';
@@ -171,6 +173,9 @@ export interface RegistrationMoney {
     paymentStatus: string | null;
     registrationCode: string | null;
     registrationQr: string | null;
+    passState: VenuePassState;
+    previewRegistrationCode: string | null;
+    previewRegistrationQr: string | null;
     eventFeePaymentLabel: string | null;
 }
 
@@ -185,8 +190,24 @@ export const EMPTY_MONEY: RegistrationMoney = {
     paymentStatus: null,
     registrationCode: null,
     registrationQr: null,
+    passState: 'none',
+    previewRegistrationCode: null,
+    previewRegistrationQr: null,
     eventFeePaymentLabel: null,
 };
+
+function parsePassState(value: unknown): VenuePassState {
+    const raw = typeof value === 'string' ? value : '';
+    if (
+        raw === 'payment_required' ||
+        raw === 'pending_verification' ||
+        raw === 'verified' ||
+        raw === 'none'
+    ) {
+        return raw;
+    }
+    return 'none';
+}
 
 function nonNegativeInt(value: unknown): number {
     const whole = Math.floor(Number(value));
@@ -207,6 +228,11 @@ export function moneyFromRegistration(source: Record<string, unknown>): Registra
         paymentStatus: typeof source.payment_status === 'string' ? source.payment_status : null,
         registrationCode: typeof source.registration_code === 'string' ? source.registration_code : null,
         registrationQr: typeof source.registration_qr === 'string' ? source.registration_qr : null,
+        passState: parsePassState(source.pass_state),
+        previewRegistrationCode:
+            typeof source.preview_registration_code === 'string' ? source.preview_registration_code : null,
+        previewRegistrationQr:
+            typeof source.preview_registration_qr === 'string' ? source.preview_registration_qr : null,
         eventFeePaymentLabel:
             typeof source.event_fee_payment_label === 'string'
                 ? source.event_fee_payment_label

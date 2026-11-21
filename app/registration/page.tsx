@@ -956,8 +956,8 @@ function RegistrationPageInner() {
             role="status"
         >
             {verificationPending
-                ? 'Payment submitted — you can still save changes to fix details (this withdraws the pending proof)'
-                : 'Registration is not complete until payment is made and the QR code is generated'}
+                ? 'Payment submitted — pass QR below is not valid for entry until finance confirms. Saving changes withdraws the pending proof.'
+                : 'Registration is not complete until payment is made and verified'}
         </div>
     ) : null;
 

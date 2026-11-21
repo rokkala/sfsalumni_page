@@ -8,6 +8,7 @@
 import { useState, type Dispatch, type FormEvent, type SetStateAction, type KeyboardEvent } from 'react';
 import BackHomeLink from '@/components/back-home-link';
 import OfflinePayModal from '@/components/offline-pay-modal';
+import { RegistrationPassBlock, passBlockFromMoney } from '@/components/registration-pass-block';
 import { ModalBlockingScrim } from '@/components/modal-shell';
 import SearchableSelect from '@/components/searchable-select';
 import { DonationSection } from '@/components/registration_page/registration-donation';
@@ -318,6 +319,14 @@ export function RegistrationForm(props: RegistrationFormProps) {
         setFormData({ ...formData, four_wheeler_count: Math.min(requested, fourWheelerMax) });
     }
 
+    const passBlock = passBlockFromMoney({
+        passState: money.passState,
+        registrationCode: money.registrationCode,
+        registrationQr: money.registrationQr,
+        previewRegistrationCode: money.previewRegistrationCode,
+        previewRegistrationQr: money.previewRegistrationQr,
+    });
+
     return (
         <>
             <ModalBlockingScrim active={payPreparing} />
@@ -354,6 +363,12 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             submit proof again for the new amount.
                         </p>
                     )}
+
+                    {passBlock ? (
+                        <div className="mb-6">
+                            <RegistrationPassBlock {...passBlock} />
+                        </div>
+                    ) : null}
 
                     <form onSubmit={onSubmit} onKeyDown={preventEnterSubmit} className="space-y-6">
                         {/* Account details: read-only, taken from the signed-in alumni account */}

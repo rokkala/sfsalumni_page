@@ -67,7 +67,7 @@ export function venuePassPaymentCue(input: {
       badge: 'Awaiting confirmation',
       message: input.donationOnly
         ? 'Your gift is with the committee. They will confirm when it is matched to your payment.'
-        : 'Your payment is with the committee. The entry pass QR unlocks once they confirm.',
+        : 'Your payment is with the committee. Your pass QR is shown below — it is not valid for entry until finance confirms.',
       ctaLabel: input.donationOnly ? 'View gift details' : 'View registration',
     };
   }
@@ -95,6 +95,35 @@ export function bankReferenceFromProof(input: {
   throw new Error('Add a UTR reference or a payment screenshot');
 }
 
+export type VenuePassState = 'none' | 'payment_required' | 'pending_verification' | 'verified';
+
+/** Member-facing entry pass state (venue pass only). Preview QR only when offline proof is pending. */
+export function passStateFromRegistration(input: {
+  venuePass: boolean;
+  paymentStatus: string | null | undefined;
+  totalDuePaise: number | null | undefined;
+  /** True when `pending_offline_proof` is present — not bank_reference alone. */
+  pendingOfflineProof: boolean;
+}): VenuePassState {
+  if (!input.venuePass) return 'none';
+  const totalDue = Math.max(0, Math.floor(Number(input.totalDuePaise) || 0));
+  const settled = input.paymentStatus === 'paid' && totalDue === 0;
+  if (settled && !input.pendingOfflineProof) return 'verified';
+  if (input.pendingOfflineProof) return 'pending_verification';
+  return 'payment_required';
+}
+
+export const PASS_PENDING_VERIFICATION_MESSAGE =
+  'Pending payment verification — not valid for venue entry until finance confirms your payment.';
+
+export const PASS_PAYMENT_VERIFIED_MESSAGE = 'Payment verified. Show this QR code at the venue.';
+
+export function passStatusBadge(state: VenuePassState): string | null {
+  if (state === 'pending_verification') return 'Pending verification';
+  if (state === 'verified') return 'Payment verified';
+  return null;
+}
+
 export function verificationStatusLabel(input: {
   paymentStatus: string | null | undefined;
   pendingProof: boolean;
@@ -103,7 +132,7 @@ export function verificationStatusLabel(input: {
   totalDuePaise?: number | null;
 }): string {
   const totalDue = Math.max(0, Math.floor(Number(input.totalDuePaise) || 0));
-  if (input.paymentStatus === 'paid' && totalDue === 0) return 'paid';
+  if (input.paymentStatus === 'paid' && totalDue === 0) return 'Payment verified';
   if (input.pendingProof || Boolean(String(input.bankReference ?? '').trim())) {
     return 'pending verification';
   }

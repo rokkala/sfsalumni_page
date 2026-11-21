@@ -8,13 +8,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import RegistrationQr from '@/components/registration-qr';
+import { RegistrationPassBlock, passBlockFromMoney } from '@/components/registration-pass-block';
 import { clampGuestCount, formatCostForDisplay } from '@/lib/registration/registration';
 import { eventFeeNotApplicable } from '@/lib/events/venue-attendance';
 import { registrationPath } from '@/lib/events/choose-event';
 import { venuePassSummary } from '@/lib/events/venue-pass';
 import type { EventCatalog } from '@/lib/events/types';
-import { venuePassPaymentCue } from '@/lib/payments/offline-proof';
+import { passStatusBadge, venuePassPaymentCue, type VenuePassState } from '@/lib/payments/offline-proof';
 
 /** One saved registration as GET /api/registration/event returns it. */
 type Registration = {
@@ -28,6 +28,9 @@ type Registration = {
   committee_confirmed?: boolean;
   registration_code?: string | null;
   registration_qr?: string | null;
+  pass_state?: VenuePassState | null;
+  preview_registration_code?: string | null;
+  preview_registration_qr?: string | null;
   bank_reference?: string | null;
   pending_offline_proof?: { utr?: string | null; has_screenshot?: boolean } | null;
 };
@@ -171,6 +174,15 @@ export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pa
           donationOnly,
         });
 
+        const passStateRaw = reg.pass_state ?? (confirmed ? 'verified' : 'payment_required');
+        const passBlock = passBlockFromMoney({
+          passState: passStateRaw,
+          registrationCode: reg.registration_code ?? null,
+          registrationQr: reg.registration_qr ?? null,
+          previewRegistrationCode: reg.preview_registration_code ?? null,
+          previewRegistrationQr: reg.preview_registration_qr ?? null,
+        });
+
         const summary = venuePassSummary({
           attending: alumnusAttending,
           lunch: reg.lunch !== false,
@@ -209,10 +221,10 @@ export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pa
                 }`}
               >
                 {confirmed
-                  ? reg.committee_confirmed
-                    ? 'Confirmed'
-                    : 'Paid'
-                  : paymentCue?.badge}
+                  ? passStatusBadge('verified') ?? 'Payment verified'
+                  : passStateRaw === 'pending_verification'
+                    ? passStatusBadge('pending_verification')
+                    : paymentCue?.badge}
               </p>
             </div>
             <h2 className="text-headline-sm text-primary mt-3">{pass.eventTitle}</h2>
@@ -233,26 +245,22 @@ export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pa
               </dl>
             )}
 
-            {summary.code && confirmed ? (
-              <div className="mt-5 rounded-xl border border-outline-variant px-4 py-5 text-center">
-                <p className="text-label-sm uppercase tracking-wider text-on-surface-variant">
-                  Show this at the venue
-                </p>
-                <p className="mt-2 text-headline-md text-primary tracking-[0.18em] font-bold">{summary.code}</p>
-                <div className="mt-4 flex justify-center">
-                  <RegistrationQr code={summary.code} payload={reg.registration_qr} />
-                </div>
-                {passOnly ? (
-                  <p className="mt-4 text-body-sm text-on-surface-variant">Turn brightness up for scanning.</p>
-                ) : (
-                  <p className="mt-4 text-body-sm text-on-surface-variant">
+            {passBlock ? (
+              <div className="mt-5">
+                <RegistrationPassBlock {...passBlock} />
+                {!passOnly && passBlock.state === 'verified' ? (
+                  <p className="mt-4 text-body-sm text-on-surface-variant text-center">
                     Turn brightness up. Prefer the{' '}
                     <Link href="/event-app" className="text-primary underline-offset-2 hover:underline">
                       home-screen event app
                     </Link>{' '}
                     so the pass is one tap away.
                   </p>
-                )}
+                ) : passOnly && passBlock.state === 'verified' ? (
+                  <p className="mt-4 text-body-sm text-on-surface-variant text-center">
+                    Turn brightness up for scanning.
+                  </p>
+                ) : null}
               </div>
             ) : confirmed ? (
               <p className="mt-5 text-body-sm text-on-surface-variant">

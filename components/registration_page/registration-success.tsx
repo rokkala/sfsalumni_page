@@ -7,7 +7,7 @@ import BackHomeLink from '@/components/back-home-link';
 import EventPushOptIn from '@/components/event-push-opt-in';
 import OfflinePayModal from '@/components/offline-pay-modal';
 import { ModalBlockingScrim } from '@/components/modal-shell';
-import RegistrationQr from '@/components/registration-qr';
+import { RegistrationPassBlock, passBlockFromMoney } from '@/components/registration-pass-block';
 import { PaymentSummary } from '@/components/registration_page/registration-payment-summary';
 import {
     clampGuestCount,
@@ -94,8 +94,6 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
 
     const isPaidInFull = money.paymentStatus === 'paid' && money.totalDuePaise === 0;
     const isConfirmed = committeeConfirmed || isPaidInFull;
-    const code = isConfirmed ? money.registrationCode : null;
-    const qrPayload = isConfirmed ? money.registrationQr : null;
 
     const guestCount = clampGuestCount(formData.number_of_guests);
     const guestsEating = clampGuestsEating(formData.guests_eating, guestCount);
@@ -159,6 +157,14 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
 
     const showPaySection = !verificationPending && (formDirty || amountDuePaise > 0 || pendingProof);
 
+    const passBlock = passBlockFromMoney({
+        passState: isConfirmed ? 'verified' : money.passState,
+        registrationCode: money.registrationCode,
+        registrationQr: money.registrationQr,
+        previewRegistrationCode: money.previewRegistrationCode,
+        previewRegistrationQr: money.previewRegistrationQr,
+    });
+
     return (
         <>
             <ModalBlockingScrim active={payPreparing} />
@@ -174,6 +180,9 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
                         <h1 className="text-headline-lg text-primary mb-3 text-center">
                             {isConfirmed ? 'Registration confirmed' : 'Registration saved'}
                         </h1>
+                        {isConfirmed && passBlock?.state === 'verified' ? (
+                            <p className="text-body-sm text-on-surface-variant mb-6 text-center">Payment verified</p>
+                        ) : null}
 
                         {!isConfirmed && (
                             <p className="text-body-sm text-on-surface-variant mb-6 text-center">
@@ -183,16 +192,11 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
                             </p>
                         )}
 
-                        {code && (
-                            <div className="mb-6 rounded-lg border border-outline-variant bg-surface px-4 py-5 text-center">
-                                <p className="text-label-md text-primary uppercase tracking-wider">Registration ID</p>
-                                <p className="mt-2 text-headline-md text-primary tracking-[0.18em] font-bold">{code}</p>
-                                <div className="mt-4 flex justify-center">
-                                    <RegistrationQr code={code} payload={qrPayload} />
-                                </div>
-                                <p className="mt-3 text-body-sm text-on-surface-variant">Show this QR code at the venue.</p>
+                        {passBlock ? (
+                            <div className="mb-6">
+                                <RegistrationPassBlock {...passBlock} />
                             </div>
-                        )}
+                        ) : null}
 
                         <section className="mb-6 space-y-4">
                             <h2 className="text-headline-sm text-primary uppercase tracking-wider">Add guests</h2>

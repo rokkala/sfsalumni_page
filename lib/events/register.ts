@@ -33,6 +33,7 @@ import {
 } from '@/lib/events/registration-code';
 import { registrationQrPayload } from '@/lib/events/registration-qr-payload';
 import { formatEventFeePaymentLabel } from '@/lib/events/payment-display';
+import { passStateFromRegistration } from '@/lib/payments/offline-proof';
 import { eventFeeNotApplicable, needsVenuePass } from '@/lib/events/venue-attendance';
 import { assertDonationAmountPaise } from '@/lib/donations/validate';
 import {
@@ -313,6 +314,19 @@ export async function getAccountRegistrationForEvent(
     attending: attendingLoad,
     guestCount: guestCountLoad,
   });
+  const totalDueForPass = passReady ? 0 : feeDue + donationDue;
+  const pass_state = passStateFromRegistration({
+    venuePass,
+    paymentStatus: reg.payment_status,
+    totalDuePaise: totalDueForPass,
+    pendingOfflineProof: Boolean(pendingProof),
+  });
+  const storedTrimmed = String(storedCode ?? '').trim();
+  const preview_registration_code =
+    pass_state === 'pending_verification' && storedTrimmed ? storedTrimmed : null;
+  const preview_registration_qr = preview_registration_code
+    ? registrationQrPayload(preview_registration_code, reg.id)
+    : null;
 
   return {
     status: 200,
@@ -323,13 +337,16 @@ export async function getAccountRegistrationForEvent(
         intended_donation_paise: donation?.amount_paise ?? 0,
         donation_payment_status: donation?.payment_status ?? null,
         donation_due_paise: donationDue,
-        total_due_paise: passReady ? 0 : feeDue + donationDue,
+        total_due_paise: totalDueForPass,
         committee_confirmed: passReady,
+        pass_state,
         registration_code: registrationCode,
         upi_payment_ref,
         registration_qr: registrationCode
           ? registrationQrPayload(registrationCode, reg.id)
           : null,
+        preview_registration_code,
+        preview_registration_qr,
         event_fee_payment_label: formatEventFeePaymentLabel({
           attending: attendingLoad,
           guestCount: guestCountLoad,
