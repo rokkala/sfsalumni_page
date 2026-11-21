@@ -1003,9 +1003,15 @@ function RegistrationPageInner() {
         committeeConfirmed || (money.paymentStatus === 'paid' && money.totalDuePaise === 0);
     // Do not show “awaiting verification” once the registration is confirmed / paid.
     const verificationPending = Boolean(pendingProof) && !isSettled;
+    const creditSavedFeeInPreview =
+        (verificationPending ||
+            money.passState === 'pending_verification' ||
+            money.paymentStatus === 'partial' ||
+            money.feePaidPaise > 0) &&
+        !isSettled;
     // Shown amounts: the database figures until the form is edited, then a live preview.
     const displayMoney = formDirty
-        ? previewMoney(money, formData, { pendingVerification: verificationPending })
+        ? previewMoney(money, formData, { creditSavedRegistrationFee: creditSavedFeeInPreview })
         : money;
     const [payingOnline, setPayingOnline] = useState(false);
     const busy = saving || payingOnline;

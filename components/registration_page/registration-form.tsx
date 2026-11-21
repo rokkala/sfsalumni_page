@@ -637,7 +637,12 @@ export function RegistrationForm(props: RegistrationFormProps) {
                         <PaymentSummary
                             money={displayMoney}
                             isPreview={formDirty}
-                            dueOnly={money.feePaidPaise > 0 || verificationPending}
+                            dueOnly={
+                                (formDirty && displayMoney.feePaidPaise > 0) ||
+                                money.feePaidPaise > 0 ||
+                                verificationPending ||
+                                money.passState === 'pending_verification'
+                            }
                             refundEmail={event?.refund_email}
                             eventTitle={event?.title || 'Event'}
                             fullName={accountContact?.full_name || ''}

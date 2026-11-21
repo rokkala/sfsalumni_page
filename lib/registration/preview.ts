@@ -13,14 +13,40 @@ import {
 import { donationIntentPaise, type FormData, type RegistrationMoney } from '@/lib/registration/types';
 
 export type PreviewMoneyOptions = {
-    /** Bank/UPI proof awaiting committee review — credit saved fee (and donation intent) in the preview. */
-    pendingVerification?: boolean;
+    /**
+     * Credit the saved registration fee in the preview (fee/donation already paid or awaiting
+     * committee review). True when proof is pending, pass is in preview, partial fee paid, etc.
+     */
+    creditSavedRegistrationFee?: boolean;
 };
 
-/** Fee already covered by verified payment or by pending offline proof on the saved registration. */
-export function creditedFeePaidPaise(saved: RegistrationMoney, pendingVerification: boolean): number {
-    if (!pendingVerification) return saved.feePaidPaise;
-    return Math.max(saved.feePaidPaise, saved.feeTotalPaise);
+/** True when the saved registration already has money in flight — preview should show increments only. */
+export function shouldCreditSavedFeeInPreview(
+    saved: RegistrationMoney,
+    opts?: Pick<PreviewMoneyOptions, 'creditSavedRegistrationFee'>
+): boolean {
+    if (opts?.creditSavedRegistrationFee) return true;
+    if (saved.passState === 'pending_verification') return true;
+    if (saved.paymentStatus === 'partial') return true;
+    return saved.feePaidPaise > 0;
+}
+
+/**
+ * Fee treated as already covered when previewing a higher guest count or other repricing.
+ * Does not credit an unpaid saved total (no payment started yet).
+ */
+export function creditedFeePaidPaise(
+    saved: RegistrationMoney,
+    previewFeeTotal: number,
+    opts?: PreviewMoneyOptions
+): number {
+    const paidRecorded = Math.max(0, saved.feePaidPaise);
+    const savedTotal = Math.max(0, saved.feeTotalPaise);
+    if (!shouldCreditSavedFeeInPreview(saved, opts)) return paidRecorded;
+    if (previewFeeTotal > savedTotal) {
+        return Math.max(paidRecorded, savedTotal);
+    }
+    return Math.max(paidRecorded, savedTotal);
 }
 
 /**
@@ -32,7 +58,7 @@ export function previewMoney(
     form: FormData,
     opts?: PreviewMoneyOptions
 ): RegistrationMoney {
-    const pendingVerification = Boolean(opts?.pendingVerification);
+    const creditSaved = shouldCreditSavedFeeInPreview(saved, opts);
     const guestCount = clampGuestCount(form.number_of_guests);
     const guestsEating = clampGuestsEating(form.guests_eating, guestCount);
     const attendanceValid = isEventAttending(form.attending, guestCount);
@@ -47,7 +73,7 @@ export function previewMoney(
           }).totalCost
         : 0;
 
-    const feePaid = creditedFeePaidPaise(saved, pendingVerification);
+    const feePaid = creditedFeePaidPaise(saved, feeTotal, opts);
     const feeDue = Math.max(0, feeTotal - feePaid);
 
     // A paid donation cannot be changed from the form, so the saved figure stays.
@@ -56,7 +82,7 @@ export function previewMoney(
     const donationDue = donationDueWithPendingVerification({
         intendedPaise: saved.donationIntendedPaise,
         paymentStatus: saved.donationPaymentStatus,
-        pendingVerification,
+        pendingVerification: creditSaved,
         previewIntentPaise: donationIntended,
     });
 
