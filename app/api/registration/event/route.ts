@@ -1,16 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getCurrentAccount } from '@/lib/auth/request';
-import {
-  getAccountRegistrationForEvent,
-  registerAccountForEvent,
-} from '@/lib/events/register';
+import { loadRegistrationForPageLoad, registerAccountForEvent } from '@/lib/events/register';
 
 export async function GET(request: Request) {
   try {
     const me = await getCurrentAccount();
     if (!me) return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
     const eventId = new URL(request.url).searchParams.get('eventId') || '';
-    const result = await getAccountRegistrationForEvent(me, eventId);
+    const result = await loadRegistrationForPageLoad(me, eventId);
     return NextResponse.json(result.payload, { status: result.status });
   } catch (err) {
     console.error('registration event get', err);

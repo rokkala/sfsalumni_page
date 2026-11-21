@@ -3,6 +3,7 @@
 
 import { NextResponse } from 'next/server';
 import { getCurrentAccount } from '@/lib/auth/request';
+import { loadRegistrationForPageLoad } from '@/lib/events/register';
 import { applyGatewayPayment } from '@/lib/events/mark-paid';
 import { cashfreeCapturedAmountPaise, isCashfreeConfigured } from '@/lib/payments/cashfree';
 import { createAdminClient } from '@/lib/supabase-admin';
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: owned } = await admin
     .from('event_registrations')
-    .select('id,razorpay_order_id')
+    .select('id,event_id,razorpay_order_id')
     .eq('id', registrationId)
     .eq('account_id', me.id)
     .maybeSingle();
@@ -51,6 +52,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
+  const eventId = String(owned.event_id || '').trim();
+  const registrationPayload = eventId
+    ? (await loadRegistrationForPageLoad(me, eventId)).payload.registration
+    : null;
+
   return NextResponse.json({
     ok: true,
     payment_status: result.payment_status,
@@ -58,5 +64,6 @@ export async function POST(request: Request) {
     amount_due_paise: result.amount_due_paise,
     donation_due_paise: result.donation_due_paise,
     registration_code: result.registration_code,
+    registration: registrationPayload,
   });
 }

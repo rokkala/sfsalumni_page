@@ -16,6 +16,7 @@ import { selectCatalog } from '@/lib/events/catalog-select';
 import { isEventSoftDeleted } from '@/lib/events/soft-delete';
 import type { EventCatalog } from '@/lib/events/types';
 import { repriceEventRegistrations } from '@/lib/events/reprice';
+import { repriceRegistration } from '@/lib/events/reprice-math';
 import {
   donationDuePaise,
   issueRegistrationCodeIfEligible,
@@ -66,6 +67,9 @@ const REG_SELECT =
 /** One PostgREST round-trip: registration + event + donation + pending proofs. */
 const VENUE_PASS_SELECT = `${REG_SELECT},registration_code,event_catalog(id,title,starts_at,ends_at,venue),donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status),offline_payment_proofs(id,utr,screenshot_path,status,created_at)`;
 const VENUE_PASS_SELECT_LITE = `${REG_SELECT},registration_code,event_catalog(id,title,starts_at,ends_at,venue),donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status)`;
+
+const REG_PAGE_SELECT = `${REG_SELECT},registration_code,donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status),offline_payment_proofs(id,utr,screenshot_path,status,created_at)`;
+const REG_PAGE_SELECT_LITE = `${REG_SELECT},registration_code,donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status)`;
 
 function embedOne<T>(value: T | T[] | null | undefined): T | null {
   if (value == null) return null;
@@ -506,6 +510,79 @@ export type VenuePassListItem = {
   registration: Record<string, unknown>;
 };
 
+/**
+ * Fast path for registration page load: one row read, in-memory fee math, no event-wide reprice or code writes.
+ * Save/payment paths still run full reprice + issuance.
+ */
+export async function loadRegistrationForPageLoad(
+  me: AlumniAccount,
+  eventId: string
+): Promise<{ status: number; payload: Record<string, unknown> }> {
+  const id = String(eventId || '').trim();
+  if (!id) return { status: 400, payload: { error: 'eventId is required' } };
+
+  const admin = createAdminClient();
+  const profile = profilePayload(me);
+
+  let fetched = await admin
+    .from('event_registrations')
+    .select(REG_PAGE_SELECT)
+    .eq('event_id', id)
+    .eq('account_id', me.id)
+    .in('payment_status', [...OPEN_PAYMENT_STATUSES])
+    .maybeSingle();
+
+  if (fetched.error) {
+    fetched = await admin
+      .from('event_registrations')
+      .select(REG_PAGE_SELECT_LITE)
+      .eq('event_id', id)
+      .eq('account_id', me.id)
+      .in('payment_status', [...OPEN_PAYMENT_STATUSES])
+      .maybeSingle();
+  }
+
+  if (fetched.error) {
+    console.error('registration page load', fetched.error);
+    return {
+      status: 500,
+      payload: { error: fetched.error.message || 'Could not load registration' },
+    };
+  }
+
+  if (!fetched.data) {
+    return { status: 200, payload: { registration: null, profile } };
+  }
+
+  const { reg, storedCode, donation, pendingProof } = splitVenuePassRow(
+    fetched.data as unknown as Record<string, unknown>
+  );
+  const repriced = repriceRegistration({
+    attending: reg.attending,
+    lunch: reg.lunch,
+    number_of_guests: reg.number_of_guests,
+    guests_eating: reg.guests_eating,
+    batch: me.batch,
+    amount_paid_paise: reg.amount_paid_paise,
+  });
+  const regForDisplay: RegistrationRow = {
+    ...reg,
+    total_cost_paise: repriced.total_cost_paise,
+    amount_paid_paise: repriced.amount_paid_paise,
+    payment_status: repriced.payment_status,
+  };
+
+  const registration = await enrichRegistrationForClient(admin, me, regForDisplay, {
+    profile,
+    readOnly: true,
+    storedCode,
+    donation,
+    pendingProof,
+  });
+
+  return { status: 200, payload: { registration, profile } };
+}
+
 /** One round-trip for member entry passes: only events this account has open registrations for. */
 export async function listAccountVenuePasses(
   me: AlumniAccount
@@ -856,12 +933,16 @@ export async function registerAccountForEvent(
     if (packedError) console.error('reg account bio pack', packedError);
   }
 
+  const pageLoad = await loadRegistrationForPageLoad(me, eventId);
+
   return {
     status: 200,
     payload: {
       ok: true,
       id: regId,
       withdrawn_pending_proof: withdrawnPendingProof > 0,
+      registration: pageLoad.payload.registration,
+      profile: pageLoad.payload.profile,
       payment_status,
       total_cost_paise: feeTotal,
       amount_paid_paise: priorPaid,

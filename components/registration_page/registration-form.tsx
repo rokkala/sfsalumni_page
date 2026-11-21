@@ -77,7 +77,10 @@ export interface RegistrationFormProps {
     /** Bank / UPI reference last submitted for verification. */
     savedBankReference: string;
     pendingProof: { utr: string | null; hasScreenshot: boolean } | null;
-    onOfflineSubmitted: (message: string) => void;
+    onOfflineSubmitted: (
+        message: string,
+        detail?: { registration?: Record<string, unknown> | null }
+    ) => void;
     /** When the committee enabled online checkout in admin (and Cashfree keys exist). */
     onlineCheckoutEnabled?: boolean;
     onPayOnline?: () => void | Promise<void>;
@@ -771,8 +774,8 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                       }
                                     : null
                             }
-                            onSubmitted={(message) => {
-                                onOfflineSubmitted(message);
+                            onSubmitted={(message, detail) => {
+                                onOfflineSubmitted(message, detail);
                                 setPayOpen(false);
                             }}
                         />

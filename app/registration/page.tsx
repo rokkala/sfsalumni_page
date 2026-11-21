@@ -812,6 +812,8 @@ function RegistrationPageInner() {
             const payload = (await res.json().catch(() => ({}))) as {
                 error?: string;
                 withdrawn_pending_proof?: boolean;
+                registration?: Record<string, unknown> | null;
+                profile?: RegistrationProfileSnapshot | null;
             };
             if (!res.ok) {
                 setError(payload.error || 'Could not save registration');
@@ -819,7 +821,16 @@ function RegistrationPageInner() {
                 return null;
             }
 
-            const loaded = await loadSavedRegistration(event.id, false);
+            let loaded: LoadedRegistration | null = null;
+            if (payload.registration) {
+                loaded = applyRegistrationPayload(
+                    { registration: payload.registration, profile: payload.profile ?? null },
+                    false
+                );
+            }
+            if (!loaded) {
+                loaded = await loadSavedRegistration(event.id, false);
+            }
             if (!loaded) {
                 setError('Saved, but the amounts could not be reloaded. Refresh the page.');
                 setSaving(false);
@@ -942,7 +953,11 @@ function RegistrationPageInner() {
                       ? `Payment received. Your registration code is ${verified.registration_code}.`
                       : 'Payment received.'
             );
-            if (event?.id) await loadSavedRegistration(event.id, false);
+            if (verified.registration && event?.id) {
+                applyRegistrationPayload({ registration: verified.registration }, false);
+            } else if (event?.id) {
+                await loadSavedRegistration(event.id, false);
+            }
         } catch {
             setError('Online payment failed. Please try again.');
         } finally {
@@ -950,9 +965,16 @@ function RegistrationPageInner() {
         }
     }
 
-    async function handleOfflineSubmitted(message: string) {
+    async function handleOfflineSubmitted(
+        message: string,
+        detail?: { registration?: Record<string, unknown> | null }
+    ) {
         setSaveMessage(message);
         setError('');
+        if (detail?.registration && event?.id) {
+            applyRegistrationPayload({ registration: detail.registration }, false);
+            return;
+        }
         if (event?.id) {
             await loadSavedRegistration(event.id, false);
             return;
@@ -1017,7 +1039,11 @@ function RegistrationPageInner() {
                         ? `Payment received. Your registration code is ${verified.registration_code}.`
                         : 'Payment received.'
                 );
-                await loadSavedRegistration(event.id, false);
+                if (verified.registration) {
+                    applyRegistrationPayload({ registration: verified.registration }, false);
+                } else {
+                    await loadSavedRegistration(event.id, false);
+                }
                 if (typeof window !== 'undefined') {
                     const url = new URL(window.location.href);
                     url.searchParams.delete('cf_order_id');
@@ -1120,8 +1146,8 @@ function RegistrationPageInner() {
                     onPrepareOfflinePay={prepareOfflinePay}
                     savedBankReference={savedBankReference}
                     pendingProof={verificationPending ? pendingProof : null}
-                    onOfflineSubmitted={(message) => {
-                        void handleOfflineSubmitted(message);
+                    onOfflineSubmitted={(message, detail) => {
+                        void handleOfflineSubmitted(message, detail);
                     }}
                     onlineCheckoutEnabled={onlineCheckoutEnabled}
                     onPayOnline={() => void payRegistrationOnline()}
@@ -1159,8 +1185,8 @@ function RegistrationPageInner() {
                 payingOnline={payingOnline}
                 onPrepareOfflinePay={prepareOfflinePay}
                 onPayOnline={() => void payRegistrationOnline()}
-                onOfflineSubmitted={(message) => {
-                    void handleOfflineSubmitted(message);
+                onOfflineSubmitted={(message, detail) => {
+                    void handleOfflineSubmitted(message, detail);
                 }}
                 onSavePartySize={() => void savePartySize()}
                 onEditDetails={() => {

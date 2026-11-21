@@ -28,8 +28,10 @@ export interface VerifyResponse {
     error?: string;
     amount_paid_paise?: number;
     amount_due_paise?: number;
+    donation_due_paise?: number;
     payment_status?: string;
     registration_code?: string | null;
+    registration?: Record<string, unknown> | null;
 }
 
 /** Fully validated order handed to Cashfree Checkout. */

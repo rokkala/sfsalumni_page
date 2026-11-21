@@ -18,7 +18,7 @@ import {
   paymentProofObjectPath,
 } from '@/lib/payments/proof-storage';
 import { feeDuePaiseFromRegistrationRow } from '@/lib/events/registration-due';
-import { repriceEventRegistrations } from '@/lib/events/reprice';
+import { loadRegistrationForPageLoad } from '@/lib/events/register';
 import { createAdminClient } from '@/lib/supabase-admin';
 
 export const dynamic = 'force-dynamic';
@@ -65,6 +65,7 @@ export async function POST(request: Request) {
   }
 
   let registrationId: string | null = null;
+  let registrationEventId: string | null = null;
   let donationId: string | null = null;
   let amountPaise: number;
 
@@ -83,25 +84,16 @@ export async function POST(request: Request) {
     if (regErr || !reg || reg.account_id !== me.id) {
       return NextResponse.json({ error: 'Registration not found' }, { status: 404 });
     }
-    const eventId = String(reg.event_id || '').trim();
-    if (eventId) await repriceEventRegistrations(eventId);
-    const { data: repricedRow } = await admin
-      .from('event_registrations')
-      .select(
-        'attending,lunch,number_of_guests,guests_eating,amount_paid_paise,total_cost_paise,payment_status,donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status)'
-      )
-      .eq('id', registrationId)
-      .maybeSingle();
-    const live = repricedRow || reg;
+    registrationEventId = String(reg.event_id || '').trim() || null;
     const feeDue = feeDuePaiseFromRegistrationRow({
-      attending: live.attending === true,
-      lunch: live.lunch !== false,
-      number_of_guests: live.number_of_guests,
-      guests_eating: live.guests_eating,
+      attending: reg.attending === true,
+      lunch: reg.lunch !== false,
+      number_of_guests: reg.number_of_guests,
+      guests_eating: reg.guests_eating,
       batch: me.batch,
-      amount_paid_paise: live.amount_paid_paise,
+      amount_paid_paise: reg.amount_paid_paise,
     });
-    const donationRow = Array.isArray(live.donation) ? live.donation[0] : live.donation;
+    const donationRow = Array.isArray(reg.donation) ? reg.donation[0] : reg.donation;
     const donationStatus = donationRow?.payment_status ?? null;
     const donationAmount = Math.max(0, Number(donationRow?.amount_paise) || 0);
     const donationDue =
@@ -301,18 +293,26 @@ export async function POST(request: Request) {
     if (refErr) console.error('offline proof bank_reference', refErr);
   }
 
+  const bank_reference = registrationId
+    ? bankReferenceFromRemittance({
+        method: parsedRemittance.method,
+        utr,
+        remittance_meta: parsedRemittance.remittance_meta,
+        hasScreenshot: Boolean(screenshot_path),
+        registrationUpiRef,
+      })
+    : null;
+
+  const registrationPayload =
+    registrationEventId && sourceType === 'registration'
+      ? (await loadRegistrationForPageLoad(me, registrationEventId)).payload
+      : null;
+
   return NextResponse.json({
     ok: true,
     proof,
-    bank_reference: registrationId
-      ? bankReferenceFromRemittance({
-          method: parsedRemittance.method,
-          utr,
-          remittance_meta: parsedRemittance.remittance_meta,
-          hasScreenshot: Boolean(screenshot_path),
-          registrationUpiRef,
-        })
-      : null,
+    bank_reference,
+    registration: registrationPayload?.registration ?? null,
     message: 'Submitted for committee verification. You will be confirmed once reviewed.',
   });
 }

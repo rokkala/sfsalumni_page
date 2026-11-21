@@ -52,7 +52,10 @@ type Props = {
     | { type: 'donation'; causeId: string; message?: string };
   /** When set, proof was already submitted and cannot be replaced until reviewed. */
   existingProof?: ExistingOfflineProof | null;
-  onSubmitted?: (message: string) => void;
+  onSubmitted?: (
+    message: string,
+    detail?: { registration?: Record<string, unknown> | null }
+  ) => void;
   submitUrl?: string;
   /** When the modal opens, pre-select this remittance method (e.g. UPI from the registration page). */
   initialRemittanceMethod?: RemittanceMethod;
@@ -99,6 +102,9 @@ export default function OfflinePayModal({
   const [copied, setCopied] = useState('');
   const [phase, setPhase] = useState<'pay' | 'thanks'>('pay');
   const [thanksMessage, setThanksMessage] = useState('');
+  const [submitDetail, setSubmitDetail] = useState<{ registration?: Record<string, unknown> | null } | null>(
+    null
+  );
   const [method, setMethod] = useState<RemittanceMethod>('neft_rtgs');
   const [paymentDate, setPaymentDate] = useState(defaultPaymentDateIst);
   const [reference, setReference] = useState('');
@@ -189,9 +195,10 @@ export default function OfflinePayModal({
       if (e.key !== 'Escape') return;
       if (phase === 'thanks') {
         const msg = thanksMessage || offlineThanksFallback(source);
-        onSubmitted?.(msg);
+        onSubmitted?.(msg, submitDetail ?? undefined);
         setPhase('pay');
         setThanksMessage('');
+        setSubmitDetail(null);
         onClose();
         return;
       }
@@ -199,7 +206,7 @@ export default function OfflinePayModal({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, busy, phase, thanksMessage, onSubmitted, onClose, source]);
+  }, [open, busy, phase, thanksMessage, submitDetail, onSubmitted, onClose, source]);
 
   useEffect(() => {
     if (!open || !upiUri || proofLocked) {
@@ -232,9 +239,10 @@ export default function OfflinePayModal({
 
   function finishThanks() {
     const msg = thanksMessage || offlineThanksFallback(source);
-    onSubmitted?.(msg);
+    onSubmitted?.(msg, submitDetail ?? undefined);
     setPhase('pay');
     setThanksMessage('');
+    setSubmitDetail(null);
     onClose();
   }
 
@@ -315,6 +323,11 @@ export default function OfflinePayModal({
       }
       setUtr('');
       setFile(null);
+      setSubmitDetail(
+        payload.registration && typeof payload.registration === 'object'
+          ? { registration: payload.registration as Record<string, unknown> }
+          : null
+      );
       setThanksMessage(offlineThanksFallback(source));
       setPhase('thanks');
     } catch {

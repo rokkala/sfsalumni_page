@@ -51,7 +51,10 @@ export interface RegistrationSuccessProps {
         { registrationId: string; transactionRef: string } | { error: string }
     >;
     onPayOnline: () => void | Promise<void>;
-    onOfflineSubmitted: (message: string) => void;
+    onOfflineSubmitted: (
+        message: string,
+        detail?: { registration?: Record<string, unknown> | null }
+    ) => void;
     onSavePartySize: () => void;
     onEditDetails: () => void;
 }
@@ -409,8 +412,8 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
                               }
                             : null
                     }
-                    onSubmitted={(message) => {
-                        onOfflineSubmitted(message);
+                    onSubmitted={(message, detail) => {
+                        onOfflineSubmitted(message, detail);
                         setPayOpen(false);
                     }}
                 />

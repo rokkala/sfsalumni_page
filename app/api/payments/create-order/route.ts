@@ -5,8 +5,8 @@
 import { randomBytes } from 'crypto';
 import { NextResponse } from 'next/server';
 import { getCurrentAccount } from '@/lib/auth/request';
-import { amountDuePaise, OPEN_PAYMENT_STATUSES } from '@/lib/events/balance';
-import { repriceEventRegistrations } from '@/lib/events/reprice';
+import { OPEN_PAYMENT_STATUSES } from '@/lib/events/balance';
+import { repriceRegistration } from '@/lib/events/reprice-math';
 import {
   applyRegistrationPayment,
   donationDuePaise,
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
   }
 
   const registrationSelect =
-    'id,event_id,account_id,payment_status,total_cost_paise,amount_paid_paise,donation_id';
+    'id,event_id,account_id,payment_status,total_cost_paise,amount_paid_paise,donation_id,attending,lunch,number_of_guests,guests_eating';
 
   const { data: reg, error } = await admin
     .from('event_registrations')
@@ -74,20 +74,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Registration not found' }, { status: 404 });
   }
 
-  await repriceEventRegistrations(String(reg.event_id || ''));
+  const repriced = repriceRegistration({
+    attending: reg.attending === true,
+    lunch: reg.lunch !== false,
+    number_of_guests: reg.number_of_guests,
+    guests_eating: reg.guests_eating,
+    batch: me.batch,
+    amount_paid_paise: reg.amount_paid_paise,
+  });
+  const feeDue = repriced.amount_due_paise;
 
-  const { data: priced } = await admin
-    .from('event_registrations')
-    .select(registrationSelect)
-    .eq('id', reg.id)
-    .maybeSingle();
-  const current = priced || reg;
-
-  const feeTotal = Math.max(0, Number(current.total_cost_paise) || 0);
-  const feePaid = Math.max(0, Number(current.amount_paid_paise) || 0);
-  const feeDue = amountDuePaise(feeTotal, feePaid);
-
-  const donation = await loadDonation(admin, current.donation_id);
+  const donation = await loadDonation(admin, reg.donation_id);
   const donationDue = donationDuePaise(donation);
   const totalDue = feeDue + donationDue;
 
