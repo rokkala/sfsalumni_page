@@ -49,13 +49,20 @@ export function creditedFeePaidPaise(
     const savedTotal = Math.max(0, saved.feeTotalPaise);
     if (!shouldCreditSavedFeeInPreview(saved, opts)) return paidRecorded;
 
+    const proofAmount = Math.max(0, Math.floor(Number(opts?.pendingProofAmountPaise) || 0));
     const proofFee = feePortionFromPendingProofAmount({
-        proofAmountPaise: opts?.pendingProofAmountPaise ?? 0,
+        proofAmountPaise: proofAmount,
         feeTotalPaise: savedTotal,
         donationIntendedPaise: saved.donationIntendedPaise,
         donationPaymentStatus: saved.donationPaymentStatus,
     });
-    const covered = Math.max(paidRecorded, savedTotal, proofFee);
+    // When proof has an explicit amount, credit only that fee slice — not the whole saved total.
+    let covered = paidRecorded;
+    if (proofAmount > 0) {
+        covered = Math.max(covered, proofFee);
+    } else {
+        covered = Math.max(covered, savedTotal);
+    }
 
     if (previewFeeTotal > covered) {
         return covered;
