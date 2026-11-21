@@ -73,7 +73,7 @@ export interface RegistrationFormProps {
     verificationPending: boolean;
     bankAccount: BankAccountPublic | null;
     onPrepareOfflinePay: () => Promise<
-        { registrationId: string; transactionRef: string } | { error: string }
+        { registrationId: string; transactionRef: string; amountDuePaise: number } | { error: string }
     >;
     /** Bank / UPI reference last submitted for verification. */
     savedBankReference: string;
@@ -224,6 +224,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
     >(undefined);
     const [payRegistrationId, setPayRegistrationId] = useState('');
     const [payRegistrationCode, setPayRegistrationCode] = useState('');
+    const [payAmountPaise, setPayAmountPaise] = useState(0);
     const [payPreparing, setPayPreparing] = useState(false);
     const [payError, setPayError] = useState('');
 
@@ -231,22 +232,21 @@ export function RegistrationForm(props: RegistrationFormProps) {
     const canOpenPay =
         Boolean(bankAccount) &&
         hasSavedReg &&
-        !formDirty &&
         !busy &&
         !payPreparing &&
-        (Boolean(pendingProof) || amountDuePaise > 0);
+        ((Boolean(pendingProof) && !formDirty) ||
+            (amountDuePaise > 0 && (!verificationPending || formDirty)));
 
     const canPayUpi =
-        canOpenPay && Boolean(bankAccount?.upi_id);
+        canOpenPay && Boolean(bankAccount?.upi_id) && (amountDuePaise > 0 || !pendingProof);
 
     const canPayOnline =
         onlineCheckoutEnabled &&
         hasSavedReg &&
-        !formDirty &&
         !busy &&
         !payingOnline &&
-        !verificationPending &&
-        amountDuePaise > 0;
+        amountDuePaise > 0 &&
+        (!verificationPending || formDirty);
 
     async function openPayModal(initialMethod?: 'neft_rtgs' | 'upi') {
         if (!canOpenPay) return;
@@ -264,6 +264,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
         }
         setPayRegistrationId(result.registrationId);
         setPayRegistrationCode(result.transactionRef);
+        setPayAmountPaise(Math.max(0, result.amountDuePaise));
         setPayInitialMethod(initialMethod);
         setPayOpen(true);
     }
@@ -743,9 +744,9 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                 Bank details are not available yet. Contact the committee.
                             </p>
                         ) : null}
-                        {bankAccount && formDirty && (amountDuePaise > 0 || pendingProof) ? (
+                        {bankAccount && formDirty && amountDuePaise > 0 && verificationPending ? (
                             <p className="text-body-sm text-on-surface-variant">
-                                Save changes before paying by Bank / UPI.
+                                Pay will save your changes first, then open checkout for the additional amount only.
                             </p>
                         ) : null}
                         {bankAccount && !hasSavedReg && amountDuePaise > 0 ? (
@@ -764,7 +765,11 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             }}
                             initialRemittanceMethod={payInitialMethod}
                             account={bankAccount}
-                            amountPaise={amountDuePaise}
+                            amountPaise={payAmountPaise > 0 ? payAmountPaise : amountDuePaise}
+                            additionalPaymentOnly={
+                                (payAmountPaise > 0 ? payAmountPaise : amountDuePaise) > 0 &&
+                                (money.feePaidPaise > 0 || verificationPending)
+                            }
                             note="Golden Jubilee registration"
                             transactionId={payRegistrationCode}
                             source={{

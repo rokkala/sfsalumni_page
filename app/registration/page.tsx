@@ -868,28 +868,37 @@ function RegistrationPageInner() {
         await saveRegistration();
     }
 
-    /** Saves if needed, then returns registration id + UPI/bank reference for the offline modal. */
+    /** Saves if needed, then returns id, ref, and server amount still due (incremental only). */
     async function prepareOfflinePay(): Promise<
-        { registrationId: string; transactionRef: string } | { error: string }
+        { registrationId: string; transactionRef: string; amountDuePaise: number } | { error: string }
     > {
         let regId = registrationId;
-        if (pendingProof) {
-            if (!regId) return { error: 'Could not find your registration. Please try again.' };
-            const ref = upiPaymentRef?.trim() || registrationCode?.trim() || regId;
-            return { registrationId: regId, transactionRef: ref };
-        }
+        let duePaise = money.totalDuePaise;
+
         if (formDirty || !regId) {
             const loaded = await saveRegistration();
             if (!loaded) return { error: 'Fix the errors on the form, then try again.' };
             regId = loaded.id;
+            duePaise = loaded.money.totalDuePaise;
+        } else if (pendingProof) {
+            if (!regId) return { error: 'Could not find your registration. Please try again.' };
+            const ref = upiPaymentRef?.trim() || registrationCode?.trim() || regId;
+            return { registrationId: regId, transactionRef: ref, amountDuePaise: duePaise };
+        } else if (event?.id) {
+            const reloaded = await loadSavedRegistration(event.id, false);
+            if (reloaded) {
+                duePaise = reloaded.money.totalDuePaise;
+                regId = reloaded.id;
+            }
         }
+
         if (!regId) return { error: 'Could not find your registration. Please try again.' };
         let ref = upiPaymentRef?.trim() || registrationCode?.trim() || '';
-        if (!ref) {
-            const reloaded = await loadSavedRegistration(event!.id, false);
+        if (!ref && event?.id) {
+            const reloaded = await loadSavedRegistration(event.id, false);
             ref = reloaded?.upiPaymentRef?.trim() || reloaded?.registrationCode?.trim() || '';
         }
-        return { registrationId: regId, transactionRef: ref || regId };
+        return { registrationId: regId, transactionRef: ref || regId, amountDuePaise: duePaise };
     }
 
     async function payRegistrationOnline() {

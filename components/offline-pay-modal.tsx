@@ -44,6 +44,8 @@ type Props = {
   onClose: () => void;
   account: BankAccountPublic;
   amountPaise: number;
+  /** Pay modal is collecting only the balance still due, not the full registration again. */
+  additionalPaymentOnly?: boolean;
   note?: string;
   /** Pre-filled UPI `tr` in the QR (e.g. registration id). */
   transactionId?: string;
@@ -83,6 +85,7 @@ export default function OfflinePayModal({
   onClose,
   account,
   amountPaise,
+  additionalPaymentOnly = false,
   note,
   transactionId,
   source,
@@ -431,8 +434,11 @@ export default function OfflinePayModal({
                   Pay Via Alternative Method
                 </h2>
                 <p className="text-sm text-on-surface-variant mt-1">
-                  Pay the amount below to <strong>{account.label}</strong> using your chosen method,
-                  then submit proof for committee verification.
+                  {additionalPaymentOnly
+                    ? 'Pay only the additional amount below (not your full registration total).'
+                    : 'Pay the amount below'}{' '}
+                  to <strong>{account.label}</strong> using your chosen method, then submit proof for
+                  committee verification.
                 </p>
                 <div className="mt-2">
                   <AmountWithFx

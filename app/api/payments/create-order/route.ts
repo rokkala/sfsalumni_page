@@ -6,12 +6,8 @@ import { randomBytes } from 'crypto';
 import { NextResponse } from 'next/server';
 import { getCurrentAccount } from '@/lib/auth/request';
 import { OPEN_PAYMENT_STATUSES } from '@/lib/events/balance';
-import { repriceRegistration } from '@/lib/events/reprice-math';
-import {
-  applyRegistrationPayment,
-  donationDuePaise,
-  loadDonation,
-} from '@/lib/events/mark-paid';
+import { registrationPaymentDuePaise } from '@/lib/events/registration-due';
+import { applyRegistrationPayment, loadDonation } from '@/lib/events/mark-paid';
 import {
   appBaseUrl,
   cashfreePublicMode,
@@ -74,19 +70,37 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Registration not found' }, { status: 404 });
   }
 
-  const repriced = repriceRegistration({
-    attending: reg.attending === true,
-    lunch: reg.lunch !== false,
-    number_of_guests: reg.number_of_guests,
-    guests_eating: reg.guests_eating,
-    batch: me.batch,
-    amount_paid_paise: reg.amount_paid_paise,
-  });
-  const feeDue = repriced.amount_due_paise;
+  const { data: pendingProofRows } = await admin
+    .from('offline_payment_proofs')
+    .select('id')
+    .eq('registration_id', registrationId)
+    .eq('status', 'pending')
+    .limit(1);
+  if (Array.isArray(pendingProofRows) && pendingProofRows.length > 0) {
+    return NextResponse.json(
+      {
+        error:
+          'You have a payment proof awaiting committee review. Save your registration first if you changed guests or donation, then pay only the additional amount due.',
+      },
+      { status: 409 }
+    );
+  }
 
   const donation = await loadDonation(admin, reg.donation_id);
-  const donationDue = donationDuePaise(donation);
-  const totalDue = feeDue + donationDue;
+  const due = registrationPaymentDuePaise(
+    {
+      attending: reg.attending === true,
+      lunch: reg.lunch !== false,
+      number_of_guests: reg.number_of_guests,
+      guests_eating: reg.guests_eating,
+      batch: me.batch,
+      amount_paid_paise: reg.amount_paid_paise,
+    },
+    donation
+  );
+  const feeDue = due.feeDuePaise;
+  const donationDue = due.donationDuePaise;
+  const totalDue = due.totalDuePaise;
 
   if (totalDue === 0) {
     const settled = await applyRegistrationPayment({ registrationId: reg.id, settleFull: true });

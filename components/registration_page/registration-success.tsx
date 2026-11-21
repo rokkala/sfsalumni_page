@@ -48,7 +48,7 @@ export interface RegistrationSuccessProps {
     onlineCheckoutEnabled: boolean;
     payingOnline: boolean;
     onPrepareOfflinePay: () => Promise<
-        { registrationId: string; transactionRef: string } | { error: string }
+        { registrationId: string; transactionRef: string; amountDuePaise: number } | { error: string }
     >;
     onPayOnline: () => void | Promise<void>;
     onOfflineSubmitted: (
@@ -92,6 +92,7 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
     );
     const [payRegistrationId, setPayRegistrationId] = useState('');
     const [payRegistrationCode, setPayRegistrationCode] = useState('');
+    const [payAmountPaise, setPayAmountPaise] = useState(0);
     const [payPreparing, setPayPreparing] = useState(false);
     const [payError, setPayError] = useState('');
 
@@ -107,20 +108,20 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
 
     const canOpenPay =
         Boolean(bankAccount) &&
-        !formDirty &&
         !busy &&
         !payPreparing &&
-        (Boolean(pendingProof) || amountDuePaise > 0);
+        ((Boolean(pendingProof) && !formDirty) ||
+            (amountDuePaise > 0 && (!verificationPending || formDirty)));
 
-    const canPayUpi = canOpenPay && Boolean(bankAccount?.upi_id);
+    const canPayUpi =
+        canOpenPay && Boolean(bankAccount?.upi_id) && (amountDuePaise > 0 || !pendingProof);
 
     const canPayOnline =
         onlineCheckoutEnabled &&
-        !formDirty &&
         !busy &&
         !payingOnline &&
-        !verificationPending &&
-        amountDuePaise > 0;
+        amountDuePaise > 0 &&
+        (!verificationPending || formDirty);
 
     async function openPayModal(initialMethod?: 'neft_rtgs' | 'upi') {
         if (!canOpenPay) return;
@@ -138,6 +139,7 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
         }
         setPayRegistrationId(result.registrationId);
         setPayRegistrationCode(result.transactionRef);
+        setPayAmountPaise(Math.max(0, result.amountDuePaise));
         setPayInitialMethod(initialMethod);
         setPayOpen(true);
     }
@@ -331,7 +333,7 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
                                 </div>
                                 {formDirty && amountDuePaise > 0 ? (
                                     <p className="text-body-sm text-on-surface-variant">
-                                        Save guest changes before paying.
+                                        Pay saves guest changes first, then requests only the additional amount.
                                     </p>
                                 ) : null}
                                 {!bankAccount && amountDuePaise > 0 ? (
@@ -398,7 +400,11 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
                     }}
                     initialRemittanceMethod={payInitialMethod}
                     account={bankAccount}
-                    amountPaise={amountDuePaise}
+                    amountPaise={payAmountPaise > 0 ? payAmountPaise : amountDuePaise}
+                    additionalPaymentOnly={
+                        (payAmountPaise > 0 ? payAmountPaise : amountDuePaise) > 0 &&
+                        (money.feePaidPaise > 0 || verificationPending)
+                    }
                     note="Golden Jubilee registration"
                     transactionId={payRegistrationCode}
                     source={{

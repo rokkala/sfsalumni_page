@@ -17,7 +17,7 @@ import {
   PAYMENT_PROOFS_BUCKET,
   paymentProofObjectPath,
 } from '@/lib/payments/proof-storage';
-import { feeDuePaiseFromRegistrationRow } from '@/lib/events/registration-due';
+import { registrationPaymentDuePaise } from '@/lib/events/registration-due';
 import { loadRegistrationForPageLoad } from '@/lib/events/register';
 import { createAdminClient } from '@/lib/supabase-admin';
 
@@ -85,22 +85,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Registration not found' }, { status: 404 });
     }
     registrationEventId = String(reg.event_id || '').trim() || null;
-    const feeDue = feeDuePaiseFromRegistrationRow({
-      attending: reg.attending === true,
-      lunch: reg.lunch !== false,
-      number_of_guests: reg.number_of_guests,
-      guests_eating: reg.guests_eating,
-      batch: me.batch,
-      amount_paid_paise: reg.amount_paid_paise,
-    });
     const donationRow = Array.isArray(reg.donation) ? reg.donation[0] : reg.donation;
-    const donationStatus = donationRow?.payment_status ?? null;
-    const donationAmount = Math.max(0, Number(donationRow?.amount_paise) || 0);
-    const donationDue =
-      donationAmount > 0 && donationStatus && donationStatus !== 'paid' && donationStatus !== 'failed'
-        ? donationAmount
-        : 0;
-    amountPaise = feeDue + donationDue;
+    const due = registrationPaymentDuePaise(
+      {
+        attending: reg.attending === true,
+        lunch: reg.lunch !== false,
+        number_of_guests: reg.number_of_guests,
+        guests_eating: reg.guests_eating,
+        batch: me.batch,
+        amount_paid_paise: reg.amount_paid_paise,
+      },
+      donationRow
+        ? {
+            id: String(donationRow.id ?? ''),
+            amount_paise: Number(donationRow.amount_paise) || 0,
+            payment_status: String(donationRow.payment_status ?? 'pending'),
+          }
+        : null
+    );
+    amountPaise = due.totalDuePaise;
     if (amountPaise < 100) {
       return NextResponse.json({ error: 'Nothing due on this registration' }, { status: 400 });
     }
